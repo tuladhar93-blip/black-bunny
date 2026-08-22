@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Search, Heart, ShoppingBag, User, Menu, X, ChevronDown, ChevronLeft,
