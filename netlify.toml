@@ -1,0 +1,19 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+
+# API routes -> serverless functions (must come before the catch-all below)
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# SPA fallback: lets a direct visit to a "hidden" route like /bb-team-2026
+# still load the app instead of 404ing, since this is a client-rendered app.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
