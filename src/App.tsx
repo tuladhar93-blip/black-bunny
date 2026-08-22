@@ -1584,6 +1584,9 @@ export default function App() {
   const [products, setProducts] = useState(FALLBACK_PRODUCTS);
   const [sheetStatus, setSheetStatus] = useState(SHEET_CSV_URL ? "loading" : "no-url");
   const [heroMedia, setHeroMedia] = useState(null);
+  const [productsReady, setProductsReady] = useState(false);
+  const [heroReady, setHeroReady] = useState(false);
+  const dataReady = productsReady && heroReady;
 
   // Load the shared homepage cover (photo/video) from the server.
   useEffect(() => {
@@ -1595,6 +1598,7 @@ export default function App() {
           if (data && (data.src || data.stored)) setHeroMedia(data);
         }
       } catch (e) { /* API not set up yet, or offline */ }
+      setHeroReady(true);
     })();
   }, []);
 
@@ -1658,12 +1662,13 @@ export default function App() {
           if (Array.isArray(data) && data.length > 0) {
             setProducts(data);
             setSheetStatus("server");
+            setProductsReady(true);
             return;
           }
         }
       } catch (e) { /* API not set up yet, or offline */ }
 
-      if (!SHEET_CSV_URL) return;
+      if (!SHEET_CSV_URL) { setProductsReady(true); return; }
       fetch(SHEET_CSV_URL)
         .then((r) => { if (!r.ok) throw new Error("bad response"); return r.text(); })
         .then((text) => {
@@ -1671,7 +1676,8 @@ export default function App() {
           if (parsed.length > 0) { setProducts(parsed); setSheetStatus("loaded"); }
           else setSheetStatus("empty");
         })
-        .catch(() => setSheetStatus("error"));
+        .catch(() => setSheetStatus("error"))
+        .finally(() => setProductsReady(true));
     })();
   }, []);
 
@@ -1755,7 +1761,13 @@ export default function App() {
         </>
       )}
 
-      {view === "home" && (
+      {view !== "admin" && !dataReady && (
+        <div className="h-[70vh] min-h-[420px] flex items-center justify-center bg-[#F7F3EC]">
+          <span className="text-[12px] tracking-[0.2em] text-[#8a8378] animate-pulse">LOADING…</span>
+        </div>
+      )}
+
+      {view === "home" && dataReady && (
         <>
           <Hero goCollection={goCollection} media={heroMedia} />
           <Carousel title="New Arrivals" products={newArrivals} onOpen={openProduct} wishlist={wishlist} toggleWish={toggleWish} viewAll={() => goCollection(null, { featured: "new" })} />
@@ -1771,15 +1783,15 @@ export default function App() {
         </>
       )}
 
-      {view === "collection" && (
+      {view === "collection" && dataReady && (
         <CollectionPage products={products} activeCat={activeCat} activeFilters={activeFilters} onOpen={openProduct} wishlist={wishlist} toggleWish={toggleWish} addToast={addToast} />
       )}
 
-      {view === "product" && (
+      {view === "product" && dataReady && (
         <ProductPage products={products} slug={activeSlug} onOpen={openProduct} addToCart={(p, s, c) => addToCart(p, s, c)} wishlist={wishlist} toggleWish={toggleWish} addToast={addToast} />
       )}
 
-      {view === "wishlist" && (
+      {view === "wishlist" && dataReady && (
         <WishlistPage products={products} wishlist={wishlist} onOpen={openProduct} toggleWish={toggleWish} addToCart={addToCart} addToast={addToast} />
       )}
 
@@ -1789,7 +1801,7 @@ export default function App() {
           : <AdminLogin onLogin={login} />
       )}
 
-      {view !== "admin" && <Footer goCollection={goCollection} />}
+      {view !== "admin" && dataReady && <Footer goCollection={goCollection} />}
 
       <CartDrawer
         open={cartOpen} onClose={() => setCartOpen(false)} cart={cart} changeQty={changeQty} removeItem={removeItem}
