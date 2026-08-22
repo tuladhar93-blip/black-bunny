@@ -304,6 +304,21 @@ function GarmentArt({ hue, altHue, hovered, pattern = 0 }) {
 
 // Shows a real product photo when the sheet provides one; falls back to the
 // generated placeholder art automatically otherwise.
+/* ============================== ASPECT BOX (cross-browser) ============================== */
+// Uses the classic padding-top percentage technique instead of the CSS
+// `aspect-ratio` property. Some iOS Safari/WebKit versions handle
+// aspect-ratio inconsistently (images collapsing to zero height and
+// overlapping neighboring content) — this works reliably on every browser,
+// old or new, on phone or laptop.
+function AspectBox({ ratio, className = "", children }) {
+  const pct = (1 / ratio) * 100;
+  return (
+    <div className={`relative w-full ${className}`} style={{ paddingTop: `${pct}%` }}>
+      <div className="absolute inset-0">{children}</div>
+    </div>
+  );
+}
+
 function ProductImage({ p, hovered, pattern }) {
   if (p.image) {
     return <img src={p.image} alt={p.name} className="w-full h-full object-cover" loading="lazy" />;
@@ -350,7 +365,7 @@ function ProductCard({ p, onOpen, wishlist, toggleWish, size = "normal" }) {
       onMouseLeave={() => setHov(false)}
       onClick={() => onOpen(p.slug)}
     >
-      <div className="relative aspect-[4/5] overflow-hidden bg-[#F1E9DC]">
+      <AspectBox ratio={4 / 5} className="overflow-hidden bg-[#F1E9DC]">
         <div className={`w-full h-full transition-transform duration-700 ${hov ? "scale-105" : "scale-100"}`}>
           <ProductImage p={p} hovered={hov} pattern={p.id % 3 === 0 ? 1 : 0} />
         </div>
@@ -365,7 +380,7 @@ function ProductCard({ p, onOpen, wishlist, toggleWish, size = "normal" }) {
           {p.newArrival && <span className="bg-black text-white text-[10px] tracking-widest px-2 py-1">NEW</span>}
           {p.limitedEdition && <span className="bg-[#8C4A45] text-white text-[10px] tracking-widest px-2 py-1">LIMITED</span>}
         </div>
-      </div>
+      </AspectBox>
       <div className="pt-3">
         <div className="flex justify-between items-start gap-2">
           <h3 className="text-[13px] font-medium tracking-wide">{p.name}</h3>
@@ -445,8 +460,8 @@ function MegaMenu({ nav, goCollection }) {
         </ul>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="aspect-[3/4] overflow-hidden"><GarmentArt hue={C.red} altHue={C.brown} hovered={false} /></div>
-        <div className="aspect-[3/4] overflow-hidden"><GarmentArt hue={JEWEL[1]} altHue={JEWEL[4]} hovered={false} /></div>
+        <div className="relative w-full overflow-hidden" style={{ paddingTop: "133.33%" }}><div className="absolute inset-0"><GarmentArt hue={C.red} altHue={C.brown} hovered={false} /></div></div>
+        <div className="relative w-full overflow-hidden" style={{ paddingTop: "133.33%" }}><div className="absolute inset-0"><GarmentArt hue={JEWEL[1]} altHue={JEWEL[4]} hovered={false} /></div></div>
       </div>
     </div>
   );
@@ -531,7 +546,9 @@ function Hero({ goCollection, media }) {
   return (
     <section className="relative h-[92vh] min-h-[560px] bg-[#EFE6D6] overflow-hidden flex items-end">
       <div className="absolute inset-0">
-        {media && media.type === "video" && media.src ? (
+        {media && media.type === "video" && media.stored ? (
+          <video src={`/api/hero-video?v=${media.updatedAt || 0}`} autoPlay muted loop playsInline preload="auto" className="w-full h-full object-cover" />
+        ) : media && media.type === "video" && media.src ? (
           <video src={media.src} autoPlay muted loop playsInline className="w-full h-full object-cover" />
         ) : media && media.type === "image" && media.src ? (
           <img src={media.src} alt="" className="w-full h-full object-cover" />
@@ -566,8 +583,8 @@ function StyleTiles({ goCollection }) {
       <h2 className="text-2xl md:text-3xl mb-8" style={{ fontFamily: "'Playfair Display', serif" }}>Find your style</h2>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {tiles.map((t, i) => (
-          <button key={t.label} onClick={() => goCollection(t.cat || "Kimonos", t.key)} className="group relative aspect-[3/4] overflow-hidden">
-            <div className="w-full h-full transition-transform duration-700 group-hover:scale-110">
+          <button key={t.label} onClick={() => goCollection(t.cat || "Kimonos", t.key)} className="group relative w-full overflow-hidden" style={{ paddingTop: "133.33%" }}>
+            <div className="absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-110">
               <GarmentArt hue={JEWEL[i % JEWEL.length]} altHue={JEWEL[(i + 2) % JEWEL.length]} hovered={false} />
             </div>
             <div className="absolute inset-0 bg-black/25 group-hover:bg-black/35 transition" />
@@ -598,8 +615,8 @@ function OccasionTiles({ goCollection }) {
       <h2 className="text-2xl md:text-3xl mb-8" style={{ fontFamily: "'Playfair Display', serif" }}>Dress for the moment</h2>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {OCCASIONS.map((o, i) => (
-          <button key={o} onClick={() => goCollection(null, { occasion: o })} className="group relative aspect-[16/10] overflow-hidden">
-            <div className="w-full h-full transition-transform duration-700 group-hover:scale-110">
+          <button key={o} onClick={() => goCollection(null, { occasion: o })} className="group relative w-full overflow-hidden" style={{ paddingTop: "62.5%" }}>
+            <div className="absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-110">
               <GarmentArt hue={JEWEL[(i + 4) % JEWEL.length]} altHue={JEWEL[(i + 1) % JEWEL.length]} hovered={false} />
             </div>
             <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition" />
@@ -633,8 +650,8 @@ function Lookbook({ goCollection }) {
       <p className="text-[#8a8378] mb-8 max-w-md">Five ways to wear the kimono, from morning to midnight.</p>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {looks.map((l, i) => (
-          <div key={l} className={`relative aspect-[3/4.4] overflow-hidden ${i === 2 ? "md:mt-10" : ""}`}>
-            <GarmentArt hue={JEWEL[(i + 5) % JEWEL.length]} altHue={JEWEL[i % JEWEL.length]} hovered={false} />
+          <div key={l} className={`relative w-full overflow-hidden ${i === 2 ? "md:mt-10" : ""}`} style={{ paddingTop: "146.67%" }}>
+            <div className="absolute inset-0"><GarmentArt hue={JEWEL[(i + 5) % JEWEL.length]} altHue={JEWEL[i % JEWEL.length]} hovered={false} /></div>
             <span className="absolute bottom-4 left-4 text-white text-[11px] tracking-wide max-w-[80%]">{l}</span>
           </div>
         ))}
@@ -824,14 +841,14 @@ function ProductPage({ products, slug, onOpen, addToCart, wishlist, toggleWish, 
     <div className="px-5 md:px-10 py-10">
       <div className="grid md:grid-cols-2 gap-10">
         <div>
-          <div className="aspect-[4/5] overflow-hidden mb-3">
-            <ProductImage p={p} hovered={imgIdx % 2 === 1} pattern={imgIdx === 2 ? 1 : 0} />
+          <div className="relative w-full overflow-hidden mb-3" style={{ paddingTop: "125%" }}>
+            <div className="absolute inset-0"><ProductImage p={p} hovered={imgIdx % 2 === 1} pattern={imgIdx === 2 ? 1 : 0} /></div>
           </div>
           {!p.image && (
             <div className="flex gap-2">
               {shots.map((s, i) => (
-                <button key={s} onClick={() => setImgIdx(i)} className={`flex-1 aspect-square overflow-hidden border-2 ${imgIdx === i ? "border-black" : "border-transparent"}`}>
-                  <GarmentArt hue={p.hue} altHue={p.altHue} hovered={i % 2 === 1} pattern={i === 2 ? 1 : 0} />
+                <button key={s} onClick={() => setImgIdx(i)} className={`relative flex-1 overflow-hidden border-2 ${imgIdx === i ? "border-black" : "border-transparent"}`} style={{ paddingTop: "100%" }}>
+                  <div className="absolute inset-0"><GarmentArt hue={p.hue} altHue={p.altHue} hovered={i % 2 === 1} pattern={i === 2 ? 1 : 0} /></div>
                 </button>
               ))}
             </div>
@@ -987,7 +1004,9 @@ function SearchOverlay({ products, open, onClose, onOpen }) {
             {results.length === 0 ? <p className="col-span-full text-[#8a8378] text-[13px]">No results for "{q}"</p> :
               results.map((p) => (
                 <button key={p.id} onClick={() => { onOpen(p.slug); onClose(); }} className="text-left">
-                  <div className="aspect-[4/5] overflow-hidden mb-2"><ProductImage p={p} hovered={false} /></div>
+                  <div className="relative w-full overflow-hidden mb-2" style={{ paddingTop: "125%" }}>
+                    <div className="absolute inset-0"><ProductImage p={p} hovered={false} /></div>
+                  </div>
                   <p className="text-[12px]">{p.name}</p>
                   <p className="text-[12px] text-[#8a8378]">{fmt(p.price)}</p>
                 </button>
@@ -1124,8 +1143,10 @@ function HeroEditor({ heroMedia, onSaveHero }) {
           </div>
 
           {src && (
-            <div className="aspect-video max-w-md bg-black overflow-hidden">
-              {type === "video" ? <video src={src} className="w-full h-full object-cover" controls muted /> : <img src={src} alt="" className="w-full h-full object-cover" />}
+            <div className="relative w-full max-w-md bg-black overflow-hidden" style={{ paddingTop: "56.25%" }}>
+              <div className="absolute inset-0">
+                {type === "video" ? <video src={src} className="w-full h-full object-cover" controls muted /> : <img src={src} alt="" className="w-full h-full object-cover" />}
+              </div>
             </div>
           )}
           {compressing && <p className="text-[12px] text-[#8a8378]">Compressing your video… this runs right in your browser and can take a moment for longer clips.</p>}
@@ -1302,19 +1323,22 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
               onDragOver={(e) => { e.preventDefault(); setImgDragOver(true); }}
               onDragLeave={() => setImgDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setImgDragOver(false); handleImage(e.dataTransfer.files[0]); }}
-              className={`relative block aspect-[4/5] bg-[#F1E9DC] border-2 ${imgDragOver ? "border-black border-solid bg-black/5" : "border-black/15 border-dashed"} cursor-pointer overflow-hidden group transition`}
+              className={`relative block w-full bg-[#F1E9DC] border-2 ${imgDragOver ? "border-black border-solid bg-black/5" : "border-black/15 border-dashed"} cursor-pointer overflow-hidden group transition`}
+              style={{ paddingTop: "125%" }}
             >
-              {form.image ? (
-                <img src={form.image} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-[#8a8378] text-[12px] gap-2 px-4 text-center">
-                  <span>Drag & drop a photo here</span>
-                  <span className="border border-black px-3 py-1.5 text-[11px] tracking-widest mt-1">CHOOSE FILE</span>
-                  <span className="text-[10px] tracking-widest">JPG or PNG</span>
+              <div className="absolute inset-0">
+                {form.image ? (
+                  <img src={form.image} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-[#8a8378] text-[12px] gap-2 px-4 text-center">
+                    <span>Drag & drop a photo here</span>
+                    <span className="border border-black px-3 py-1.5 text-[11px] tracking-widest mt-1">CHOOSE FILE</span>
+                    <span className="text-[10px] tracking-widest">JPG or PNG</span>
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <span className="text-white text-[11px] tracking-widest border border-white px-3 py-1.5">{form.image ? "CHANGE PHOTO" : "UPLOAD PHOTO"}</span>
                 </div>
-              )}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <span className="text-white text-[11px] tracking-widest border border-white px-3 py-1.5">{form.image ? "CHANGE PHOTO" : "UPLOAD PHOTO"}</span>
               </div>
               <input type="file" accept="image/*" onChange={(e) => handleImage(e.target.files[0])} className="hidden" />
             </label>
@@ -1421,10 +1445,12 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
           <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {products.map((p) => (
               <div key={p.id} onClick={() => startEdit(p)} className="bg-white border border-black/10 p-3 cursor-pointer hover:border-black/30 transition">
-                <div className="aspect-[4/5] overflow-hidden mb-2 bg-[#F1E9DC] relative">
-                  <ProductImage p={p} hovered={false} pattern={0} />
-                  <div className="absolute inset-0 bg-black/0 hover:bg-black/35 transition flex items-center justify-center opacity-0 hover:opacity-100">
-                    <span className="text-white text-[10px] tracking-widest border border-white px-2.5 py-1">EDIT</span>
+                <div className="relative w-full overflow-hidden mb-2 bg-[#F1E9DC]" style={{ paddingTop: "125%" }}>
+                  <div className="absolute inset-0">
+                    <ProductImage p={p} hovered={false} pattern={0} />
+                    <div className="absolute inset-0 bg-black/0 hover:bg-black/35 transition flex items-center justify-center opacity-0 hover:opacity-100">
+                      <span className="text-white text-[10px] tracking-widest border border-white px-2.5 py-1">EDIT</span>
+                    </div>
                   </div>
                 </div>
                 <p className="text-[13px] mb-0.5">{p.name}</p>
@@ -1446,7 +1472,7 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
 // This is the only place your admin URL is set. Change it to something only
 // you know before you launch — it's the "hidden link" that reaches Admin;
 // nothing on the storefront links to it.
-const ADMIN_PATH = "/admin2026";
+const ADMIN_PATH = "/bb-team-2026";
 
 export default function App() {
   const isAdminRoute = typeof window !== "undefined" && window.location.pathname === ADMIN_PATH;
@@ -1490,15 +1516,51 @@ export default function App() {
         const res = await fetch("/api/hero");
         if (res.ok) {
           const data = await res.json();
-          if (data && data.src) setHeroMedia(data);
+          if (data && (data.src || data.stored)) setHeroMedia(data);
         }
       } catch (e) { /* API not set up yet, or offline */ }
     })();
   }, []);
 
   const saveHero = async (media) => {
-    setHeroMedia(media);
     try {
+      // A freshly-uploaded video comes in as a big inline data: URL. Embedding
+      // that directly is what made playback unreliable on iPhone — instead,
+      // upload the actual video bytes to a real file endpoint, and only save
+      // a small pointer/metadata object.
+      if (media && media.type === "video" && media.src && media.src.startsWith("data:")) {
+        const commaIdx = media.src.indexOf(",");
+        const header = media.src.slice(5, commaIdx); // strip "data:"
+        const mimeType = header.split(";")[0] || "video/mp4";
+        const base64 = media.src.slice(commaIdx + 1);
+        const binary = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+
+        const videoRes = await fetch("/api/hero-video", {
+          method: "POST",
+          headers: { "x-admin-key": adminKey, "x-content-type": mimeType },
+          body: binary,
+        });
+        if (videoRes.status === 401) { logout(); addToast("Session expired — please log in again"); return; }
+        if (!videoRes.ok) { addToast("Couldn't save the video — it may be too large."); return; }
+
+        const meta = { type: "video", stored: true, updatedAt: Date.now() };
+        const metaRes = await fetch("/api/hero", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+          body: JSON.stringify(meta),
+        });
+        if (metaRes.status === 401) { logout(); addToast("Session expired — please log in again"); return; }
+        setHeroMedia(meta);
+        addToast("Cover saved");
+        return;
+      }
+
+      if (media === null) {
+        // Removing the cover also clears any stored video file.
+        fetch("/api/hero-video", { method: "DELETE", headers: { "x-admin-key": adminKey } }).catch(() => {});
+      }
+
+      setHeroMedia(media);
       const res = await fetch("/api/hero", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
