@@ -1054,6 +1054,14 @@ function HeroEditor({ heroMedia, onSaveHero }) {
   const [open, setOpen] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [compressNote, setCompressNote] = useState("");
+  const [skipCompress, setSkipCompress] = useState(false);
+  const [quality, setQuality] = useState("balanced"); // smaller | balanced | high
+
+  const QUALITY_PRESETS = {
+    smaller: { maxWidth: 720, videoBitsPerSecond: 800000, maxDurationSec: 15, label: "Smaller file — loads fast, softer image" },
+    balanced: { maxWidth: 1080, videoBitsPerSecond: 1800000, maxDurationSec: 12, label: "Balanced — good quality, moderate size" },
+    high: { maxWidth: 1440, videoBitsPerSecond: 3200000, maxDurationSec: 8, label: "Higher quality — sharper, shorter clip needed to stay small" },
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
@@ -1062,13 +1070,20 @@ function HeroEditor({ heroMedia, onSaveHero }) {
     if (type === "image") {
       const dataUrl = await resizeImageFile(file, 1600, 0.8);
       setSrc(dataUrl);
+    } else if (skipCompress) {
+      // Uses the file exactly as uploaded — smoother playback, but the file
+      // stays whatever size it already is, so keep the source small.
+      const reader = new FileReader();
+      reader.onload = (ev) => setSrc(ev.target.result);
+      reader.readAsDataURL(file);
+      setCompressNote("Using your file as-is, uncompressed. If it doesn't save, it's likely too large — trim/compress it before uploading.");
     } else {
       setCompressing(true);
-      const { dataUrl, compressed } = await compressVideoFile(file);
+      const { dataUrl, compressed } = await compressVideoFile(file, QUALITY_PRESETS[quality]);
       setCompressing(false);
       if (dataUrl) {
         setSrc(dataUrl);
-        setCompressNote(compressed ? "Compressed automatically — resized, muted, and trimmed to 15s to keep it light." : "");
+        setCompressNote(compressed ? `Compressed at "${QUALITY_PRESETS[quality].label}". Want it sharper? Try a higher quality setting below, or check "Skip auto-compression" with your own pre-edited file.` : "");
       } else {
         // Fallback: browser couldn't compress, so use the original file uncompressed.
         const reader = new FileReader();
@@ -1127,7 +1142,20 @@ function HeroEditor({ heroMedia, onSaveHero }) {
             <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">
               {type === "video" ? "OR UPLOAD A CLIP — AUTO-COMPRESSED ON UPLOAD" : "OR UPLOAD A FILE"}
             </label>
+            {type === "video" && !skipCompress && (
+              <div className="flex gap-2 mb-3 flex-wrap">
+                {Object.entries(QUALITY_PRESETS).map(([key, p]) => (
+                  <button key={key} type="button" onClick={() => setQuality(key)} className={`px-3 py-1.5 text-[11px] border ${quality === key ? "bg-black text-white border-black" : "border-black/20"}`}>{p.label}</button>
+                ))}
+              </div>
+            )}
             <input type="file" accept={type === "video" ? "video/*" : "image/*"} onChange={handleFile} className="text-[12px]" />
+            {type === "video" && (
+              <label className="flex items-center gap-2 text-[12px] mt-2">
+                <input type="checkbox" checked={skipCompress} onChange={(e) => setSkipCompress(e.target.checked)} />
+                Skip auto-compression (use if your video is already small/optimized, or if compressed playback looked choppy)
+              </label>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">
