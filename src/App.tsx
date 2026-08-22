@@ -360,7 +360,7 @@ function ProductCard({ p, onOpen, wishlist, toggleWish, size = "normal" }) {
   const [hov, setHov] = useState(false);
   return (
     <div
-      className={`group cursor-pointer flex-shrink-0 ${size === "carousel" ? "w-[78%] sm:w-[46%] md:w-[280px]" : "w-full"}`}
+      className={`group cursor-pointer flex-shrink-0 ${size === "carousel" ? "pcard" : "w-full"}`}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       onClick={() => onOpen(p.slug)}
@@ -512,7 +512,7 @@ function MobileMenu({ open, onClose, goCollection }) {
   return (
     <div className={`fixed inset-0 z-[60] transition ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
       <div className={`absolute inset-0 bg-black/40 transition-opacity ${open ? "opacity-100" : "opacity-0"}`} onClick={onClose} />
-      <div className={`absolute top-0 left-0 bottom-0 w-[82%] max-w-[340px] bg-white transition-transform duration-300 ${open ? "translate-x-0" : "-translate-x-full"} overflow-y-auto`}>
+      <div className={`absolute top-0 left-0 bottom-0 bg-white transition-transform duration-300 ${open ? "translate-x-0" : "-translate-x-full"} overflow-y-auto`} style={{ width: "82%", maxWidth: 340 }}>
         <div className="flex justify-between items-center px-6 h-[70px] border-b border-black/10">
           <span className="text-lg tracking-widest" style={{ fontFamily: "'Playfair Display', serif" }}>BLACK BUNNY</span>
           <button onClick={onClose}><X size={22} /></button>
@@ -678,7 +678,7 @@ function SocialGallery() {
       <h2 className="text-2xl md:text-3xl mb-8 text-center" style={{ fontFamily: "'Playfair Display', serif" }}>@BLACKBUNNY</h2>
       <div className="flex gap-3 overflow-x-auto scrollbar-hide">
         {Array.from({ length: 7 }).map((_, i) => (
-          <div key={i} className="w-[160px] h-[200px] flex-shrink-0 overflow-hidden"><GarmentArt hue={JEWEL[i % JEWEL.length]} altHue={JEWEL[(i + 3) % JEWEL.length]} hovered={false} /></div>
+          <div key={i} className="flex-shrink-0 overflow-hidden" style={{ width: 160, height: 200 }}><GarmentArt hue={JEWEL[i % JEWEL.length]} altHue={JEWEL[(i + 3) % JEWEL.length]} hovered={false} /></div>
         ))}
       </div>
     </section>
@@ -789,7 +789,7 @@ function CollectionPage({ products, activeCat, activeFilters, onOpen, wishlist, 
 
       <div className={`fixed inset-0 z-[70] ${drawerOpen ? "" : "pointer-events-none"}`}>
         <div className={`absolute inset-0 bg-black/40 transition-opacity ${drawerOpen ? "opacity-100" : "opacity-0"}`} onClick={() => setDrawerOpen(false)} />
-        <div className={`absolute top-0 left-0 bottom-0 w-[85%] max-w-[320px] bg-white p-6 overflow-y-auto transition-transform duration-300 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className={`absolute top-0 left-0 bottom-0 bg-white p-6 overflow-y-auto transition-transform duration-300 ${drawerOpen ? "translate-x-0" : "-translate-x-full"}`} style={{ width: "85%", maxWidth: 320 }}>
           <div className="flex justify-between items-center mb-6">
             <span className="text-[13px] tracking-widest">FILTER</span>
             <button onClick={() => setDrawerOpen(false)}><X size={20} /></button>
@@ -935,7 +935,7 @@ function CartDrawer({ open, onClose, cart, changeQty, removeItem, goCheckoutToas
   return (
     <div className={`fixed inset-0 z-[80] ${open ? "" : "pointer-events-none"}`}>
       <div className={`absolute inset-0 bg-black/40 transition-opacity ${open ? "opacity-100" : "opacity-0"}`} onClick={onClose} />
-      <div className={`absolute top-0 right-0 bottom-0 w-[420px] max-w-[94vw] bg-white flex flex-col transition-transform duration-300 ${open ? "translate-x-0" : "translate-x-full"}`}>
+      <div className={`absolute top-0 right-0 bottom-0 bg-white flex flex-col transition-transform duration-300 ${open ? "translate-x-0" : "translate-x-full"}`} style={{ width: 420, maxWidth: "94vw" }}>
         <div className="flex justify-between items-center px-6 h-[68px] border-b border-black/10">
           <span className="text-[15px] tracking-wide">Your Bag ({cart.reduce((s, i) => s + i.qty, 0)})</span>
           <button onClick={onClose}><X size={20} /></button>
@@ -1663,7 +1663,10 @@ export default function App() {
     <div className="min-h-screen bg-white text-[#0E0D0C]" style={{ fontFamily: "'Inter',sans-serif" }}>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet" />
-      <style>{`.scrollbar-hide::-webkit-scrollbar{display:none} .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}`}</style>
+      <style>{`
+        .scrollbar-hide::-webkit-scrollbar{display:none} .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
+        .pcard{width:78%;} @media (min-width:640px){.pcard{width:46%;}} @media (min-width:768px){.pcard{width:280px;}}
+      `}</style>
 
       {!isAdminRoute && (
         <>
