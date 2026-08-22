@@ -211,6 +211,71 @@ const COLLECTIONS = ["Kyoto","Sora","Hana","Nocturne"];
 /* ============================== HELPERS ============================== */
 const fmt = (n) => `Rs ${n.toFixed(0)}`;
 
+// Re-encodes an uploaded video client-side: downsizes resolution, strips
+// audio (hero background videos play muted anyway), caps bitrate and
+// trims length — using only native browser APIs (canvas + MediaRecorder),
+// no external library. Falls back to the original file if the browser
+// doesn't support this.
+function compressVideoFile(file, { maxWidth = 960, fps = 24, videoBitsPerSecond = 900000, maxDurationSec = 15 } = {}) {
+  return new Promise((resolve, reject) => {
+    const canRecord = typeof MediaRecorder !== "undefined" && typeof HTMLCanvasElement !== "undefined" && HTMLCanvasElement.prototype.captureStream;
+    if (!canRecord) { resolve({ dataUrl: null, compressed: false }); return; }
+
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.src = URL.createObjectURL(file);
+
+    video.onloadedmetadata = () => {
+      const scale = Math.min(1, maxWidth / video.videoWidth);
+      const w = Math.round(video.videoWidth * scale);
+      const h = Math.round(video.videoHeight * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+
+      const stream = canvas.captureStream(fps);
+      let mimeType = "video/webm;codecs=vp9";
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "video/webm;codecs=vp8";
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "video/webm";
+
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond });
+      const chunks = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        URL.revokeObjectURL(video.src);
+        const blob = new Blob(chunks, { type: "video/webm" });
+        const reader = new FileReader();
+        reader.onload = () => resolve({ dataUrl: reader.result, compressed: true });
+        reader.onerror = () => resolve({ dataUrl: null, compressed: false });
+        reader.readAsDataURL(blob);
+      };
+      recorder.onerror = () => resolve({ dataUrl: null, compressed: false });
+
+      let rafId;
+      const drawFrame = () => {
+        if (video.paused || video.ended) return;
+        ctx.drawImage(video, 0, 0, w, h);
+        rafId = requestAnimationFrame(drawFrame);
+      };
+
+      const stopAt = Math.min(video.duration || maxDurationSec, maxDurationSec);
+      const stopTimer = setTimeout(() => {
+        cancelAnimationFrame(rafId);
+        video.pause();
+        recorder.stop();
+      }, stopAt * 1000);
+
+      video.onplay = () => { drawFrame(); };
+      video.onended = () => { clearTimeout(stopTimer); cancelAnimationFrame(rafId); recorder.stop(); };
+
+      recorder.start();
+      video.play().catch(() => { clearTimeout(stopTimer); resolve({ dataUrl: null, compressed: false }); });
+    };
+    video.onerror = () => resolve({ dataUrl: null, compressed: false });
+  });
+}
+
 // Resizes an uploaded photo client-side before it's stored, so the catalog
 // stays small and fast even with several product photos.
 function resizeImageFile(file, maxW = 900, quality = 0.78) {
@@ -987,19 +1052,30 @@ function HeroEditor({ heroMedia, onSaveHero }) {
   const [src, setSrc] = useState(heroMedia?.src || "");
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
+  const [compressing, setCompressing] = useState(false);
+  const [compressNote, setCompressNote] = useState("");
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    // Images get resized/compressed. Videos are left as-is but a browser tab
-    // can only comfortably hold a small clip this way — a few MB at most.
+    setCompressNote("");
     if (type === "image") {
       const dataUrl = await resizeImageFile(file, 1600, 0.8);
       setSrc(dataUrl);
     } else {
-      const reader = new FileReader();
-      reader.onload = (ev) => setSrc(ev.target.result);
-      reader.readAsDataURL(file);
+      setCompressing(true);
+      const { dataUrl, compressed } = await compressVideoFile(file);
+      setCompressing(false);
+      if (dataUrl) {
+        setSrc(dataUrl);
+        setCompressNote(compressed ? "Compressed automatically — resized, muted, and trimmed to 15s to keep it light." : "");
+      } else {
+        // Fallback: browser couldn't compress, so use the original file uncompressed.
+        const reader = new FileReader();
+        reader.onload = (ev) => setSrc(ev.target.result);
+        reader.readAsDataURL(file);
+        setCompressNote("Your browser couldn't auto-compress this — using the original file. If it's large, saving may fail; a shorter/smaller clip or a hosted URL works better.");
+      }
     }
   };
 
@@ -1037,23 +1113,25 @@ function HeroEditor({ heroMedia, onSaveHero }) {
               {type === "video" ? <video src={src} className="w-full h-full object-cover" controls muted /> : <img src={src} alt="" className="w-full h-full object-cover" />}
             </div>
           )}
+          {compressing && <p className="text-[12px] text-[#8a8378]">Compressing your video… this runs right in your browser and can take a moment for longer clips.</p>}
+          {compressNote && <p className="text-[12px] text-[#8a8378]">{compressNote}</p>}
 
           <div className="space-y-2">
             <label className="text-[11px] tracking-widest text-[#8a8378] block">
-              {type === "video" ? "PASTE A VIDEO URL (recommended)" : "PASTE AN IMAGE URL, OR UPLOAD BELOW"}
+              {type === "video" ? "PASTE A VIDEO URL (recommended for longer/higher-quality clips)" : "PASTE AN IMAGE URL, OR UPLOAD BELOW"}
             </label>
             <input value={src.startsWith("data:") ? "" : src} onChange={(e) => setSrc(e.target.value)} placeholder="https://…" className="w-full border border-black/15 px-3 py-2 text-[13px]" />
           </div>
 
           <div>
             <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">
-              {type === "video" ? "OR UPLOAD A SHORT CLIP (keep it small, under ~10MB — large videos may fail to save)" : "OR UPLOAD A FILE"}
+              {type === "video" ? "OR UPLOAD A CLIP — AUTO-COMPRESSED ON UPLOAD" : "OR UPLOAD A FILE"}
             </label>
             <input type="file" accept={type === "video" ? "video/*" : "image/*"} onChange={handleFile} className="text-[12px]" />
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button onClick={save} disabled={saving} className="bg-black text-white px-6 py-2.5 text-[12px] tracking-widest hover:bg-[#8C4A45] transition disabled:opacity-50">{saving ? "SAVING…" : "SAVE COVER"}</button>
+            <button onClick={save} disabled={saving || compressing} className="bg-black text-white px-6 py-2.5 text-[12px] tracking-widest hover:bg-[#8C4A45] transition disabled:opacity-50">{saving ? "SAVING…" : "SAVE COVER"}</button>
             {heroMedia && <button onClick={remove} className="border border-black/20 px-4 py-2.5 text-[12px] tracking-widest text-[#8C4A45]">REMOVE / USE DEFAULT</button>}
           </div>
         </div>
