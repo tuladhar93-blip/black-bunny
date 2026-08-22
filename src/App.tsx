@@ -1261,24 +1261,17 @@ function AdminLogin({ onLogin }) {
 }
 
 /* ============================== ADMIN ============================== */
-function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, onLogout }) {
-  const emptyForm = { id: null, name: "", category: "Kimonos", style: "", collection: "", occasion: "Everyday", fabric: "", price: "", sizes: ["XS", "S", "M", "L", "XL"], colors: [{ n: "Ivory", h: "#F1E9DC" }], image: null, newArrival: false, bestSeller: false, limitedEdition: false, description: "" };
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
+/* ============================== PRODUCT FORM (shared: add + inline edit) ============================== */
+function ProductForm({ form, setForm, saving, onSubmit, onCancel, isEditing }) {
   const [imgDragOver, setImgDragOver] = useState(false);
-
   const allSizes = ["XS", "S", "M", "L", "XL", "One Size"];
   const categories = ["Kimonos", "Dresses", "Sets", "Tops", "Bottoms", "Resortwear", "Accessories"];
-
-  const startEdit = (p) => { setForm({ ...p, price: String(p.price) }); window.scrollTo(0, 0); };
-  const resetForm = () => setForm(emptyForm);
 
   const handleImage = async (file) => {
     if (!file) return;
     const dataUrl = await resizeImageFile(file);
     setForm((f) => ({ ...f, image: dataUrl }));
   };
-
   const updateColor = (idx, key, val) => setForm((f) => {
     const colors = [...f.colors];
     colors[idx] = { ...colors[idx], [key]: val };
@@ -1287,6 +1280,170 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
   const addColor = () => setForm((f) => (f.colors.length >= 4 ? f : { ...f, colors: [...f.colors, { n: "New Color", h: "#8C4A45" }] }));
   const removeColor = (idx) => setForm((f) => ({ ...f, colors: f.colors.filter((_, i) => i !== idx) }));
   const toggleSize = (s) => setForm((f) => ({ ...f, sizes: f.sizes.includes(s) ? f.sizes.filter((x) => x !== s) : [...f.sizes, s] }));
+
+  return (
+    <form onSubmit={onSubmit} className="bg-white p-6 space-y-5 border-2 border-black">
+      <div className="flex justify-between items-center">
+        <p className="text-[13px] tracking-widest">{isEditing ? "EDITING THIS PRODUCT" : "ADD A NEW PRODUCT"}</p>
+        <button type="button" onClick={onCancel} className="text-[#8a8378] hover:text-black transition" aria-label="Cancel"><X size={18} /></button>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <div>
+          <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">PRODUCT PHOTO — the picture customers will see</label>
+          <label
+            onDragOver={(e) => { e.preventDefault(); setImgDragOver(true); }}
+            onDragLeave={() => setImgDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setImgDragOver(false); handleImage(e.dataTransfer.files[0]); }}
+            className={`relative block w-full max-w-xs bg-[#F1E9DC] border-2 ${imgDragOver ? "border-black border-solid bg-black/5" : "border-black/15 border-dashed"} cursor-pointer overflow-hidden group transition`}
+            style={{ paddingTop: "125%" }}
+          >
+            <div className="absolute inset-0">
+              {form.image ? (
+                <img src={form.image} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-[#8a8378] text-[12px] gap-2 px-4 text-center">
+                  <span>Drag a photo here, or</span>
+                  <span className="border border-black px-3 py-1.5 text-[11px] tracking-widest mt-1">CHOOSE A PHOTO</span>
+                  <span className="text-[10px] tracking-widest">JPG or PNG</span>
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <span className="text-white text-[11px] tracking-widest border border-white px-3 py-1.5">{form.image ? "CHANGE PHOTO" : "UPLOAD PHOTO"}</span>
+              </div>
+            </div>
+            <input type="file" accept="image/*" onChange={(e) => handleImage(e.target.files[0])} className="hidden" />
+          </label>
+          {form.image && (
+            <button type="button" onClick={() => setForm((f) => ({ ...f, image: null }))} className="mt-2 text-[11px] text-[#8C4A45] underline underline-offset-4">Remove photo</button>
+          )}
+        </div>
+
+        <div className="space-y-5">
+          <div>
+            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">PRODUCT NAME</label>
+            <input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Sora Satin Kimono" className="w-full border border-black/15 px-3 py-2 text-[13px]" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">CATEGORY</label>
+              <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
+                {categories.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">PRICE (RS)</label>
+              <input required type="number" min="0" step="1" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} placeholder="1500" className="w-full border border-black/15 px-3 py-2 text-[13px]" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">SIZES AVAILABLE</label>
+            <div className="flex flex-wrap gap-2">
+              {allSizes.map((s) => (
+                <button type="button" key={s} onClick={() => toggleSize(s)} className={`px-3 py-1.5 text-[11px] border ${form.sizes.includes(s) ? "bg-black text-white border-black" : "border-black/20"}`}>{s}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">COLORS AVAILABLE</label>
+            <div className="space-y-2">
+              {form.colors.map((c, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input type="color" value={c.h} onChange={(e) => updateColor(i, "h", e.target.value)} className="w-8 h-8 border border-black/15" />
+                  <input value={c.n} onChange={(e) => updateColor(i, "n", e.target.value)} className="flex-1 border border-black/15 px-2 py-1.5 text-[12px]" placeholder="Color name" />
+                  {form.colors.length > 1 && <button type="button" onClick={() => removeColor(i)} className="text-[#8a8378]"><X size={14} /></button>}
+                </div>
+              ))}
+              {form.colors.length < 4 && <button type="button" onClick={addColor} className="text-[11px] underline underline-offset-4">+ Add another color</button>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <details className="border-t border-black/10 pt-4">
+        <summary className="text-[11px] tracking-widest text-[#8a8378] cursor-pointer select-none">MORE DETAILS (optional) — style, fabric, description</summary>
+        <div className="mt-4 space-y-5">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">STYLE</label>
+              <select value={form.style} onChange={(e) => setForm((f) => ({ ...f, style: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
+                <option value="">—</option>
+                {KIMONO_STYLES.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">OCCASION</label>
+              <select value={form.occasion} onChange={(e) => setForm((f) => ({ ...f, occasion: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
+                {OCCASIONS.map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">COLLECTION</label>
+              <select value={form.collection} onChange={(e) => setForm((f) => ({ ...f, collection: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
+                <option value="">—</option>
+                {COLLECTIONS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">FABRIC</label>
+              <input value={form.fabric} onChange={(e) => setForm((f) => ({ ...f, fabric: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]" placeholder="e.g. Silk, Rayon" />
+            </div>
+          </div>
+          <div className="flex gap-4 flex-wrap">
+            {[["newArrival", "New Arrival"], ["bestSeller", "Best Seller"], ["limitedEdition", "Limited Edition"]].map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-[12px]">
+                <input type="checkbox" checked={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.checked }))} />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div>
+            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">DESCRIPTION</label>
+            <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} placeholder="Leave blank and we'll write a simple one for you." className="w-full border border-black/15 px-3 py-2 text-[13px]" />
+          </div>
+        </div>
+      </details>
+
+      <div className="flex gap-3 pt-2">
+        <button type="submit" disabled={saving} className="flex-1 bg-black text-white py-3.5 text-[12px] tracking-widest hover:bg-[#8C4A45] transition disabled:opacity-50">
+          {saving ? "SAVING…" : isEditing ? "SAVE CHANGES" : "ADD THIS PRODUCT"}
+        </button>
+        <button type="button" onClick={onCancel} className="border border-black/20 px-5 text-[12px] tracking-widest">CANCEL</button>
+      </div>
+    </form>
+  );
+}
+
+/* ============================== ADMIN ============================== */
+function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, onLogout }) {
+  const emptyForm = { id: null, name: "", category: "Kimonos", style: "", collection: "", occasion: "Everyday", fabric: "", price: "", sizes: ["XS", "S", "M", "L", "XL"], colors: [{ n: "Ivory", h: "#F1E9DC" }], image: null, newArrival: false, bestSeller: false, limitedEdition: false, description: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const categories = ["Kimonos", "Dresses", "Sets", "Tops", "Bottoms", "Resortwear", "Accessories"];
+
+  const startEdit = (p) => {
+    setForm({ ...p, price: String(p.price) });
+    setEditingId(p.id);
+    setShowAddForm(false);
+    requestAnimationFrame(() => {
+      document.getElementById(`admin-product-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+  const startAdd = () => {
+    setForm(emptyForm);
+    setEditingId(null);
+    setShowAddForm(true);
+  };
+  const cancelEdit = () => { setForm(emptyForm); setEditingId(null); };
+  const cancelAdd = () => { setForm(emptyForm); setShowAddForm(false); };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1313,7 +1470,9 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
     setSaving(true);
     await onSave(product);
     setSaving(false);
-    resetForm();
+    setForm(emptyForm);
+    setEditingId(null);
+    setShowAddForm(false);
   };
 
   return (
@@ -1329,157 +1488,58 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
 
       <HeroEditor heroMedia={heroMedia} onSaveHero={onSaveHero} />
 
-      <div className="grid lg:grid-cols-[380px_1fr] gap-10">
-        <form onSubmit={submit} className="bg-white p-6 space-y-5 border border-black/10 h-fit">
-          <p className="text-[12px] tracking-widest">{form.id ? "EDIT PRODUCT" : "NEW PRODUCT"}</p>
-
-          <div>
-            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">COVER PHOTO</label>
-            <label
-              onDragOver={(e) => { e.preventDefault(); setImgDragOver(true); }}
-              onDragLeave={() => setImgDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setImgDragOver(false); handleImage(e.dataTransfer.files[0]); }}
-              className={`relative block w-full bg-[#F1E9DC] border-2 ${imgDragOver ? "border-black border-solid bg-black/5" : "border-black/15 border-dashed"} cursor-pointer overflow-hidden group transition`}
-              style={{ paddingTop: "125%" }}
-            >
-              <div className="absolute inset-0">
-                {form.image ? (
-                  <img src={form.image} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-[#8a8378] text-[12px] gap-2 px-4 text-center">
-                    <span>Drag & drop a photo here</span>
-                    <span className="border border-black px-3 py-1.5 text-[11px] tracking-widest mt-1">CHOOSE FILE</span>
-                    <span className="text-[10px] tracking-widest">JPG or PNG</span>
-                  </div>
-                )}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                  <span className="text-white text-[11px] tracking-widest border border-white px-3 py-1.5">{form.image ? "CHANGE PHOTO" : "UPLOAD PHOTO"}</span>
-                </div>
-              </div>
-              <input type="file" accept="image/*" onChange={(e) => handleImage(e.target.files[0])} className="hidden" />
-            </label>
-            {form.image && (
-              <button type="button" onClick={() => setForm((f) => ({ ...f, image: null }))} className="mt-2 text-[11px] text-[#8C4A45] underline underline-offset-4">Remove photo</button>
-            )}
-          </div>
-
-          <div>
-            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">NAME</label>
-            <input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">CATEGORY</label>
-              <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
-                {categories.map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">PRICE (RS)</label>
-              <input required type="number" min="0" step="1" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">STYLE</label>
-              <select value={form.style} onChange={(e) => setForm((f) => ({ ...f, style: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
-                <option value="">—</option>
-                {KIMONO_STYLES.map((s) => <option key={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">OCCASION</label>
-              <select value={form.occasion} onChange={(e) => setForm((f) => ({ ...f, occasion: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
-                {OCCASIONS.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">COLLECTION</label>
-              <select value={form.collection} onChange={(e) => setForm((f) => ({ ...f, collection: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]">
-                <option value="">—</option>
-                {COLLECTIONS.map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">FABRIC</label>
-              <input value={form.fabric} onChange={(e) => setForm((f) => ({ ...f, fabric: e.target.value }))} className="w-full border border-black/15 px-3 py-2 text-[13px]" placeholder="e.g. Silk, Rayon" />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">SIZES</label>
-            <div className="flex flex-wrap gap-2">
-              {allSizes.map((s) => (
-                <button type="button" key={s} onClick={() => toggleSize(s)} className={`px-3 py-1.5 text-[11px] border ${form.sizes.includes(s) ? "bg-black text-white border-black" : "border-black/20"}`}>{s}</button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">COLORS</label>
-            <div className="space-y-2">
-              {form.colors.map((c, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input type="color" value={c.h} onChange={(e) => updateColor(i, "h", e.target.value)} className="w-8 h-8 border border-black/15" />
-                  <input value={c.n} onChange={(e) => updateColor(i, "n", e.target.value)} className="flex-1 border border-black/15 px-2 py-1.5 text-[12px]" placeholder="Color name" />
-                  {form.colors.length > 1 && <button type="button" onClick={() => removeColor(i)} className="text-[#8a8378]"><X size={14} /></button>}
-                </div>
-              ))}
-              {form.colors.length < 4 && <button type="button" onClick={addColor} className="text-[11px] underline underline-offset-4">+ Add color</button>}
-            </div>
-          </div>
-
-          <div className="flex gap-4 flex-wrap">
-            {[["newArrival", "New Arrival"], ["bestSeller", "Best Seller"], ["limitedEdition", "Limited Edition"]].map(([key, label]) => (
-              <label key={key} className="flex items-center gap-2 text-[12px]">
-                <input type="checkbox" checked={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.checked }))} />
-                {label}
-              </label>
-            ))}
-          </div>
-
-          <div>
-            <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">DESCRIPTION</label>
-            <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className="w-full border border-black/15 px-3 py-2 text-[13px]" />
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving} className="flex-1 bg-black text-white py-3 text-[12px] tracking-widest hover:bg-[#8C4A45] transition disabled:opacity-50">
-              {saving ? "SAVING…" : form.id ? "SAVE CHANGES" : "ADD PRODUCT"}
-            </button>
-            {form.id && <button type="button" onClick={resetForm} className="border border-black/20 px-4 text-[12px] tracking-widest">CANCEL</button>}
-          </div>
-        </form>
-
-        <div>
-          <p className="text-[12px] tracking-widest text-[#8a8378] mb-4">{products.length} PRODUCTS LIVE ON SITE</p>
-          <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {products.map((p) => (
-              <div key={p.id} onClick={() => startEdit(p)} className="bg-white border border-black/10 p-3 cursor-pointer hover:border-black/30 transition">
-                <div className="relative w-full overflow-hidden mb-2 bg-[#F1E9DC]" style={{ paddingTop: "125%" }}>
-                  <div className="absolute inset-0">
-                    <ProductImage p={p} hovered={false} pattern={0} />
-                    <div className="absolute inset-0 bg-black/0 hover:bg-black/35 transition flex items-center justify-center opacity-0 hover:opacity-100">
-                      <span className="text-white text-[10px] tracking-widest border border-white px-2.5 py-1">EDIT</span>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[13px] mb-0.5">{p.name}</p>
-                <p className="text-[11px] text-[#8a8378] mb-2">{p.category} · {fmt(p.price)}</p>
-                <div className="flex gap-2">
-                  <button onClick={(e) => { e.stopPropagation(); startEdit(p); }} className="flex-1 border border-black/20 py-1.5 text-[11px] tracking-widest hover:bg-black hover:text-white transition">EDIT</button>
-                  <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${p.name}"?`)) onDelete(p.id); }} className="border border-black/20 px-3 py-1.5 text-[11px] text-[#8C4A45] hover:bg-[#8C4A45] hover:text-white transition">DELETE</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="flex items-center justify-between mb-6">
+        <p className="text-[13px] tracking-widest">{products.length} PRODUCTS ON YOUR SITE</p>
+        {!showAddForm && (
+          <button onClick={startAdd} className="bg-black text-white px-5 py-2.5 text-[12px] tracking-widest hover:bg-[#8C4A45] transition">+ ADD NEW PRODUCT</button>
+        )}
       </div>
+
+      {showAddForm && (
+        <div className="mb-10">
+          <ProductForm form={form} setForm={setForm} saving={saving} onSubmit={submit} onCancel={cancelAdd} isEditing={false} />
+        </div>
+      )}
+
+      {products.length === 0 ? (
+        <p className="text-[#8a8378] text-[13px]">No products yet — click "+ Add New Product" above to add your first one.</p>
+      ) : (
+        categories.map((cat) => {
+          const inCat = products.filter((p) => p.category === cat);
+          if (inCat.length === 0) return null;
+          return (
+            <div key={cat} className="mb-12">
+              <p className="text-[13px] tracking-widest border-b border-black/10 pb-3 mb-5">{cat.toUpperCase()} <span className="text-[#8a8378]">({inCat.length})</span></p>
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {inCat.map((p) => (
+                  <div key={p.id} id={`admin-product-${p.id}`} className={editingId === p.id ? "sm:col-span-2 xl:col-span-3" : ""}>
+                    {editingId === p.id ? (
+                      <ProductForm form={form} setForm={setForm} saving={saving} onSubmit={submit} onCancel={cancelEdit} isEditing={true} />
+                    ) : (
+                      <div onClick={() => startEdit(p)} className="bg-white border border-black/10 p-3 cursor-pointer hover:border-black/30 transition">
+                        <div className="relative w-full overflow-hidden mb-2 bg-[#F1E9DC]" style={{ paddingTop: "125%" }}>
+                          <div className="absolute inset-0">
+                            <ProductImage p={p} hovered={false} pattern={0} />
+                            <div className="absolute inset-0 bg-black/0 hover:bg-black/35 transition flex items-center justify-center opacity-0 hover:opacity-100">
+                              <span className="text-white text-[10px] tracking-widest border border-white px-2.5 py-1">TAP TO EDIT</span>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-[13px] mb-0.5">{p.name}</p>
+                        <p className="text-[11px] text-[#8a8378] mb-2">{fmt(p.price)}</p>
+                        <div className="flex gap-2">
+                          <button onClick={(e) => { e.stopPropagation(); startEdit(p); }} className="flex-1 border border-black/20 py-1.5 text-[11px] tracking-widest hover:bg-black hover:text-white transition">EDIT</button>
+                          <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${p.name}"?`)) onDelete(p.id); }} className="border border-black/20 px-3 py-1.5 text-[11px] text-[#8C4A45] hover:bg-[#8C4A45] hover:text-white transition">DELETE</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
