@@ -360,7 +360,8 @@ function ProductCard({ p, onOpen, wishlist, toggleWish, size = "normal" }) {
   const [hov, setHov] = useState(false);
   return (
     <div
-      className={`group cursor-pointer flex-shrink-0 ${size === "carousel" ? "pcard" : "w-full"}`}
+      className={`group cursor-pointer flex-shrink-0 ${size === "carousel" ? "" : "w-full"}`}
+      style={size === "carousel" ? { width: "clamp(230px, 78vw, 300px)" } : undefined}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       onClick={() => onOpen(p.slug)}
@@ -1680,7 +1681,6 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet" />
       <style>{`
         .scrollbar-hide::-webkit-scrollbar{display:none} .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
-        .pcard{width:78%;} @media (min-width:640px){.pcard{width:46%;}} @media (min-width:768px){.pcard{width:280px;}}
       `}</style>
 
       {!isAdminRoute && (
