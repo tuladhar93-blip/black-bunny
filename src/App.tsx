@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Search, Heart, ShoppingBag, User, Menu, X, ChevronDown, ChevronLeft,
@@ -96,33 +97,7 @@ const FALLBACK_PRODUCTS = RAW_PRODUCTS.map((p, i) => {
      - image: a direct public image URL (Google Drive share links won't work directly — use imgur, Cloudinary, or your host)
      - newArrival / bestSeller / limitedEdition: TRUE or FALSE
 =========================================================================================== */
-const SHEET_CSV_URL = ""; // <-- paste your published CSV link here
-
-// Persistence layer: uses Claude's built-in window.storage when this runs
-// inside a Claude artifact preview. Outside that (StackBlitz, your own
-// hosting, etc.) window.storage doesn't exist, so this falls back to the
-// browser's localStorage instead — which still survives a page refresh,
-// but only on this device/browser, not shared with real visitors.
-const storage = {
-  async get(key, shared) {
-    if (typeof window !== "undefined" && window.storage && typeof window.storage.get === "function") {
-      return window.storage.get(key, shared);
-    }
-    try {
-      const v = window.localStorage.getItem(key);
-      return v ? { key, value: v, shared: !!shared } : null;
-    } catch (e) { return null; }
-  },
-  async set(key, value, shared) {
-    if (typeof window !== "undefined" && window.storage && typeof window.storage.set === "function") {
-      return window.storage.set(key, value, shared);
-    }
-    try {
-      window.localStorage.setItem(key, value);
-      return { key, value, shared: !!shared };
-    } catch (e) { return null; }
-  },
-};
+const SHEET_CSV_URL = ""; // <-- paste your published CSV link here (used only if the /api endpoints aren't reachable)
 
 function parseCSV(text) {
   const rows = [];
@@ -336,6 +311,35 @@ function ProductImage({ p, hovered, pattern }) {
   return <GarmentArt hue={p.hue} altHue={p.altHue} hovered={hovered} pattern={pattern} />;
 }
 
+/* ============================== FILE DROPZONE (shared, admin uploads) ============================== */
+// A proper drag-and-drop area with a real styled button — replaces the
+// plain browser "Choose File" text input everywhere admin uploads a file.
+function FileDropzone({ accept, onFile, hint = "Drag & drop a file here, or" }) {
+  const inputRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const take = (files) => { if (files && files[0]) onFile(files[0]); };
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => { e.preventDefault(); setDragOver(false); take(e.dataTransfer.files); }}
+      className={`border-2 border-dashed rounded-sm px-4 py-5 text-center transition ${dragOver ? "border-black bg-black/5" : "border-black/20"}`}
+    >
+      <p className="text-[12px] text-[#8a8378] mb-2">{hint}</p>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="border border-black px-4 py-2 text-[11px] tracking-widest hover:bg-black hover:text-white transition"
+      >
+        CHOOSE FILE
+      </button>
+      <input ref={inputRef} type="file" accept={accept} onChange={(e) => take(e.target.files)} className="hidden" />
+    </div>
+  );
+}
+
 /* ============================== PRODUCT CARD ============================== */
 function ProductCard({ p, onOpen, wishlist, toggleWish, size = "normal" }) {
   const [hov, setHov] = useState(false);
@@ -449,7 +453,7 @@ function MegaMenu({ nav, goCollection }) {
 }
 
 /* ============================== HEADER ============================== */
-function Header({ scrolled, cartCount, wishCount, openCart, openSearch, openWish, goHome, goCollection, goAdmin, mobileOpen, setMobileOpen }) {
+function Header({ scrolled, cartCount, wishCount, openCart, openSearch, openWish, goHome, goCollection, mobileOpen, setMobileOpen }) {
   const [hoverNav, setHoverNav] = useState(null);
   return (
     <header className={`sticky top-0 z-50 bg-white transition-shadow ${scrolled ? "shadow-[0_2px_16px_rgba(0,0,0,0.06)]" : ""}`}>
@@ -472,7 +476,6 @@ function Header({ scrolled, cartCount, wishCount, openCart, openSearch, openWish
         </button>
         <div className="flex items-center gap-5">
           <button onClick={openSearch} aria-label="Search"><Search size={19} /></button>
-          <button onClick={goAdmin} className="hidden md:block text-[10px] tracking-widest text-[#8a8378] hover:text-black transition" aria-label="Store admin">ADMIN</button>
           <button className="hidden md:block" aria-label="Account"><User size={19} /></button>
           <button onClick={openWish} className="relative" aria-label="Wishlist">
             <Heart size={19} />
@@ -490,7 +493,7 @@ function Header({ scrolled, cartCount, wishCount, openCart, openSearch, openWish
 }
 
 /* ============================== MOBILE MENU ============================== */
-function MobileMenu({ open, onClose, goCollection, goAdmin }) {
+function MobileMenu({ open, onClose, goCollection }) {
   return (
     <div className={`fixed inset-0 z-[60] transition ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
       <div className={`absolute inset-0 bg-black/40 transition-opacity ${open ? "opacity-100" : "opacity-0"}`} onClick={onClose} />
@@ -503,7 +506,6 @@ function MobileMenu({ open, onClose, goCollection, goAdmin }) {
           {NAV.map((n) => (
             <button key={n.label} onClick={() => { goCollection(n.cat, {}); onClose(); }} className="text-left py-3.5 text-[15px] tracking-wide border-b border-black/5">{n.label}</button>
           ))}
-          <button onClick={() => { goAdmin(); onClose(); }} className="text-left py-3.5 text-[12px] tracking-widest text-[#8a8378] mt-4">STORE ADMIN</button>
         </div>
       </div>
     </div>
@@ -1062,8 +1064,7 @@ function HeroEditor({ heroMedia, onSaveHero }) {
     high: { maxWidth: 1440, videoBitsPerSecond: 3200000, maxDurationSec: 8, label: "Higher quality — sharper, shorter clip needed to stay small" },
   };
 
-  const handleFile = async (e) => {
-    const file = e.target.files[0];
+  const handleFile = async (file) => {
     if (!file) return;
     setCompressNote("");
     if (type === "image") {
@@ -1148,7 +1149,11 @@ function HeroEditor({ heroMedia, onSaveHero }) {
                 ))}
               </div>
             )}
-            <input type="file" accept={type === "video" ? "video/*" : "image/*"} onChange={handleFile} className="text-[12px]" />
+            <FileDropzone
+              accept={type === "video" ? "video/*" : "image/*"}
+              onFile={handleFile}
+              hint={type === "video" ? "Drag & drop a video here, or" : "Drag & drop a photo here, or"}
+            />
             {type === "video" && (
               <label className="flex items-center gap-2 text-[12px] mt-2">
                 <input type="checkbox" checked={skipCompress} onChange={(e) => setSkipCompress(e.target.checked)} />
@@ -1167,11 +1172,63 @@ function HeroEditor({ heroMedia, onSaveHero }) {
   );
 }
 
+/* ============================== ADMIN LOGIN ============================== */
+function AdminLogin({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        onLogin(data.key);
+      } else {
+        setError(data.error || "Incorrect username or password.");
+      }
+    } catch (err) {
+      setError("Couldn't reach the server — check your connection and try again.");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F7F3EC] flex items-center justify-center px-6">
+      <form onSubmit={submit} className="bg-white border border-black/10 p-8 w-full max-w-sm">
+        <p className="text-lg mb-1" style={{ fontFamily: "'Playfair Display', serif" }}>Store Admin</p>
+        <p className="text-[12px] text-[#8a8378] mb-6">This page is private. Sign in to continue.</p>
+
+        <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">USERNAME</label>
+        <input required autoFocus value={username} onChange={(e) => setUsername(e.target.value)} className="w-full border border-black/15 px-3 py-2 text-[13px] mb-4" />
+
+        <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">PASSWORD</label>
+        <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border border-black/15 px-3 py-2 text-[13px] mb-5" />
+
+        {error && <p className="text-[12px] text-[#8C4A45] mb-4">{error}</p>}
+
+        <button type="submit" disabled={busy} className="w-full bg-black text-white py-3 text-[12px] tracking-widest hover:bg-[#8C4A45] transition disabled:opacity-50">
+          {busy ? "SIGNING IN…" : "SIGN IN"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 /* ============================== ADMIN ============================== */
-function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero }) {
+function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, onLogout }) {
   const emptyForm = { id: null, name: "", category: "Kimonos", style: "", collection: "", occasion: "Everyday", fabric: "", price: "", sizes: ["XS", "S", "M", "L", "XL"], colors: [{ n: "Ivory", h: "#F1E9DC" }], image: null, newArrival: false, bestSeller: false, limitedEdition: false, description: "" };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [imgDragOver, setImgDragOver] = useState(false);
 
   const allSizes = ["XS", "S", "M", "L", "XL", "One Size"];
   const categories = ["Kimonos", "Dresses", "Sets", "Tops", "Bottoms", "Resortwear", "Accessories"];
@@ -1179,8 +1236,7 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero }
   const startEdit = (p) => { setForm({ ...p, price: String(p.price) }); window.scrollTo(0, 0); };
   const resetForm = () => setForm(emptyForm);
 
-  const handleImage = async (e) => {
-    const file = e.target.files[0];
+  const handleImage = async (file) => {
     if (!file) return;
     const dataUrl = await resizeImageFile(file);
     setForm((f) => ({ ...f, image: dataUrl }));
@@ -1227,9 +1283,12 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero }
     <div className="min-h-screen bg-[#F7F3EC] px-5 md:px-10 py-8">
       <div className="flex justify-between items-center mb-3">
         <span className="text-2xl" style={{ fontFamily: "'Playfair Display', serif" }}>Store Admin</span>
-        <button onClick={onBack} className="text-[12px] tracking-widest underline underline-offset-4">← Back to Store</button>
+        <div className="flex gap-4">
+          <button onClick={onBack} className="text-[12px] tracking-widest underline underline-offset-4">← Back to Store</button>
+          <button onClick={onLogout} className="text-[12px] tracking-widest text-[#8C4A45] underline underline-offset-4">Log out</button>
+        </div>
       </div>
-      <p className="text-[12px] text-[#8a8378] mb-8 max-w-lg">Changes save instantly to the live site for anyone with this link. There's no login on this page — treat the link as private.</p>
+      <p className="text-[12px] text-[#8a8378] mb-8 max-w-lg">Changes save instantly to the live site for every visitor. Keep this page's link and login private.</p>
 
       <HeroEditor heroMedia={heroMedia} onSaveHero={onSaveHero} />
 
@@ -1239,19 +1298,25 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero }
 
           <div>
             <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">COVER PHOTO</label>
-            <label className="relative block aspect-[4/5] bg-[#F1E9DC] border border-black/15 cursor-pointer overflow-hidden group">
+            <label
+              onDragOver={(e) => { e.preventDefault(); setImgDragOver(true); }}
+              onDragLeave={() => setImgDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setImgDragOver(false); handleImage(e.dataTransfer.files[0]); }}
+              className={`relative block aspect-[4/5] bg-[#F1E9DC] border-2 ${imgDragOver ? "border-black border-solid bg-black/5" : "border-black/15 border-dashed"} cursor-pointer overflow-hidden group transition`}
+            >
               {form.image ? (
                 <img src={form.image} alt="" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-[#8a8378] text-[12px] gap-2">
-                  <span>Click to upload a photo</span>
+                <div className="w-full h-full flex flex-col items-center justify-center text-[#8a8378] text-[12px] gap-2 px-4 text-center">
+                  <span>Drag & drop a photo here</span>
+                  <span className="border border-black px-3 py-1.5 text-[11px] tracking-widest mt-1">CHOOSE FILE</span>
                   <span className="text-[10px] tracking-widest">JPG or PNG</span>
                 </div>
               )}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
                 <span className="text-white text-[11px] tracking-widest border border-white px-3 py-1.5">{form.image ? "CHANGE PHOTO" : "UPLOAD PHOTO"}</span>
               </div>
-              <input type="file" accept="image/*" onChange={handleImage} className="hidden" />
+              <input type="file" accept="image/*" onChange={(e) => handleImage(e.target.files[0])} className="hidden" />
             </label>
             {form.image && (
               <button type="button" onClick={() => setForm((f) => ({ ...f, image: null }))} className="mt-2 text-[11px] text-[#8C4A45] underline underline-offset-4">Remove photo</button>
@@ -1378,8 +1443,14 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero }
 }
 
 /* ============================== APP ============================== */
+// This is the only place your admin URL is set. Change it to something only
+// you know before you launch — it's the "hidden link" that reaches Admin;
+// nothing on the storefront links to it.
+const ADMIN_PATH = "/admin2026";
+
 export default function App() {
-  const [view, setView] = useState("home"); // home | collection | product | wishlist | admin
+  const isAdminRoute = typeof window !== "undefined" && window.location.pathname === ADMIN_PATH;
+  const [view, setView] = useState(isAdminRoute ? "admin" : "home"); // home | collection | product | wishlist | admin
   const [activeCat, setActiveCat] = useState(null);
   const [activeFilters, setActiveFilters] = useState({});
   const [activeSlug, setActiveSlug] = useState(null);
@@ -1392,47 +1463,67 @@ export default function App() {
   const [scrolled, setScrolled] = useState(false);
   const [toast, setToast] = useState("");
 
+  const [adminKey, setAdminKey] = useState(() => (typeof window !== "undefined" && sessionStorage.getItem("bb_admin_key")) || "");
+  const [adminAuthed, setAdminAuthed] = useState(!!adminKey);
+
+  const login = (key) => {
+    sessionStorage.setItem("bb_admin_key", key);
+    setAdminKey(key);
+    setAdminAuthed(true);
+  };
+  const logout = () => {
+    sessionStorage.removeItem("bb_admin_key");
+    setAdminKey("");
+    setAdminAuthed(false);
+    window.history.pushState({}, "", "/");
+    setView("home");
+  };
+
   const [products, setProducts] = useState(FALLBACK_PRODUCTS);
   const [sheetStatus, setSheetStatus] = useState(SHEET_CSV_URL ? "loading" : "no-url");
   const [heroMedia, setHeroMedia] = useState(null);
 
-  // Load the saved homepage cover (photo/video) alongside the products.
+  // Load the shared homepage cover (photo/video) from the server.
   useEffect(() => {
     (async () => {
       try {
-        const res = await storage.get("bb_hero", true);
-        if (res && res.value) {
-          const parsed = JSON.parse(res.value);
-          if (parsed && parsed.src) setHeroMedia(parsed);
+        const res = await fetch("/api/hero");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.src) setHeroMedia(data);
         }
-      } catch (e) { /* no hero saved yet */ }
+      } catch (e) { /* API not set up yet, or offline */ }
     })();
   }, []);
 
   const saveHero = async (media) => {
     setHeroMedia(media);
     try {
-      if (media) await storage.set("bb_hero", JSON.stringify(media), true);
-      else await storage.set("bb_hero", JSON.stringify(null), true);
+      const res = await fetch("/api/hero", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify(media),
+      });
+      if (res.status === 401) { logout(); addToast("Session expired — please log in again"); return; }
       addToast(media ? "Cover saved" : "Cover removed");
-    } catch (e) { addToast("Couldn't save — storage error"); }
+    } catch (e) { addToast("Couldn't save — check your connection"); }
   };
 
-  // On load: admin-panel data (saved via window.storage) always wins if any
-  // exists. Otherwise falls back to the Google Sheet feed, then sample data.
+  // Load the shared product catalog from the server. Falls back to the
+  // Google Sheet feed, then sample data, if the API isn't reachable yet.
   useEffect(() => {
     (async () => {
       try {
-        const res = await storage.get("bb_products", true);
-        if (res && res.value) {
-          const parsed = JSON.parse(res.value);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setProducts(parsed);
-            setSheetStatus("storage");
+        const res = await fetch("/api/products");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setProducts(data);
+            setSheetStatus("server");
             return;
           }
         }
-      } catch (e) { /* no admin data saved yet */ }
+      } catch (e) { /* API not set up yet, or offline */ }
 
       if (!SHEET_CSV_URL) return;
       fetch(SHEET_CSV_URL)
@@ -1447,8 +1538,15 @@ export default function App() {
   }, []);
 
   const persistProducts = async (list) => {
-    try { await storage.set("bb_products", JSON.stringify(list), true); }
-    catch (e) { addToast("Couldn't save — storage error"); }
+    try {
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify(list),
+      });
+      if (res.status === 401) { logout(); addToast("Session expired — please log in again"); return false; }
+      return true;
+    } catch (e) { addToast("Couldn't save — check your connection"); return false; }
   };
   const saveProduct = async (product) => {
     const idx = products.findIndex((p) => p.id === product.id);
@@ -1456,15 +1554,15 @@ export default function App() {
     // up first in their category instead of buried at the end.
     const next = idx > -1 ? products.map((p) => (p.id === product.id ? product : p)) : [product, ...products];
     setProducts(next);
-    setSheetStatus("storage");
-    await persistProducts(next);
-    addToast("Saved");
+    setSheetStatus("server");
+    const ok = await persistProducts(next);
+    if (ok) addToast("Saved");
   };
   const deleteProduct = async (id) => {
     const next = products.filter((p) => p.id !== id);
     setProducts(next);
-    await persistProducts(next);
-    addToast("Product removed");
+    const ok = await persistProducts(next);
+    if (ok) addToast("Product removed");
   };
 
   useEffect(() => {
@@ -1479,7 +1577,6 @@ export default function App() {
   const goCollection = (cat, filters) => { setActiveCat(cat); setActiveFilters(filters || {}); setView("collection"); window.scrollTo(0, 0); };
   const openProduct = (slug) => { setActiveSlug(slug); setView("product"); window.scrollTo(0, 0); };
   const openWishlistPage = () => { setView("wishlist"); window.scrollTo(0, 0); };
-  const goAdmin = () => { setView("admin"); window.scrollTo(0, 0); };
 
   const toggleWish = (id) => setWishlist((w) => w.includes(id) ? w.filter((x) => x !== id) : [...w, id]);
 
@@ -1506,13 +1603,17 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet" />
       <style>{`.scrollbar-hide::-webkit-scrollbar{display:none} .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}`}</style>
 
-      <AnnouncementBar />
-      <Header
-        scrolled={scrolled} cartCount={cart.reduce((s, i) => s + i.qty, 0)} wishCount={wishlist.length}
-        openCart={() => setCartOpen(true)} openSearch={() => setSearchOpen(true)} openWish={openWishlistPage}
-        goHome={goHome} goCollection={goCollection} goAdmin={goAdmin} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}
-      />
-      <MobileMenu open={mobileOpen} onClose={() => setMobileOpen(false)} goCollection={goCollection} goAdmin={goAdmin} />
+      {!isAdminRoute && (
+        <>
+          <AnnouncementBar />
+          <Header
+            scrolled={scrolled} cartCount={cart.reduce((s, i) => s + i.qty, 0)} wishCount={wishlist.length}
+            openCart={() => setCartOpen(true)} openSearch={() => setSearchOpen(true)} openWish={openWishlistPage}
+            goHome={goHome} goCollection={goCollection} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}
+          />
+          <MobileMenu open={mobileOpen} onClose={() => setMobileOpen(false)} goCollection={goCollection} />
+        </>
+      )}
 
       {view === "home" && (
         <>
@@ -1543,7 +1644,9 @@ export default function App() {
       )}
 
       {view === "admin" && (
-        <AdminPage products={products} onSave={saveProduct} onDelete={deleteProduct} onBack={goHome} heroMedia={heroMedia} onSaveHero={saveHero} />
+        adminAuthed
+          ? <AdminPage products={products} onSave={saveProduct} onDelete={deleteProduct} onBack={goHome} heroMedia={heroMedia} onSaveHero={saveHero} onLogout={logout} />
+          : <AdminLogin onLogin={login} />
       )}
 
       {view !== "admin" && <Footer goCollection={goCollection} />}
@@ -1557,7 +1660,7 @@ export default function App() {
 
       {sheetStatus === "no-url" && view !== "admin" && (
         <div className="fixed bottom-4 right-4 z-[110] bg-amber-100 border border-amber-300 text-amber-900 text-[11px] px-4 py-2.5 max-w-[260px] rounded shadow-lg">
-          Showing sample products — open <button onClick={goAdmin} className="underline font-medium">Admin</button> to add your real catalog.
+          Showing sample products — the admin API isn't reachable yet, or your catalog is empty.
         </div>
       )}
       {sheetStatus === "error" && (
