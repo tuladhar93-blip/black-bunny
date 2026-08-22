@@ -543,13 +543,28 @@ function AnnouncementBar() {
 
 /* ============================== HOME PAGE ============================== */
 function Hero({ goCollection, media }) {
+  const videoRef = useRef(null);
+
+  // iOS Safari has a known quirk where the muted attribute set by React
+  // doesn't always register in time for autoplay to be permitted, even
+  // though everything else is correct. Setting it imperatively and
+  // explicitly calling play() is the reliable fix.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = true;
+    v.defaultMuted = true;
+    const p = v.play();
+    if (p && p.catch) p.catch(() => {});
+  }, [media]);
+
   return (
     <section className="relative h-[92vh] min-h-[560px] bg-[#EFE6D6] overflow-hidden flex items-end">
       <div className="absolute inset-0">
         {media && media.type === "video" && media.stored ? (
-          <video src={`/api/hero-video?v=${media.updatedAt || 0}`} autoPlay muted loop playsInline preload="auto" className="w-full h-full object-cover" />
+          <video ref={videoRef} src={`/api/hero-video?v=${media.updatedAt || 0}`} autoPlay muted defaultMuted loop playsInline preload="auto" className="w-full h-full object-cover" />
         ) : media && media.type === "video" && media.src ? (
-          <video src={media.src} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+          <video ref={videoRef} src={media.src} autoPlay muted defaultMuted loop playsInline preload="auto" className="w-full h-full object-cover" />
         ) : media && media.type === "image" && media.src ? (
           <img src={media.src} alt="" className="w-full h-full object-cover" />
         ) : (
