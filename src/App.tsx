@@ -274,6 +274,48 @@ function resizeImageFile(file, maxW = 900, quality = 0.78) {
   });
 }
 
+// Returns the URL to display an uploaded photo/video by its media id.
+const mediaUrl = (id) => `/api/media?id=${id}`;
+
+// One function for every upload button in Admin: looks at the file's real
+// type and automatically compresses + uploads it as a photo or a video —
+// nothing for the person to choose. Returns { id, type, mimeType }.
+async function uploadMediaFile(file, adminKey) {
+  const isVideo = file.type.startsWith("video/");
+  let dataUrl, mimeTypeGuess;
+  if (isVideo) {
+    const result = await compressVideoFile(file, { maxWidth: 960, videoBitsPerSecond: 1200000, maxDurationSec: 12 });
+    if (result.dataUrl) {
+      dataUrl = result.dataUrl;
+    } else {
+      dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = (e) => resolve(e.target.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+    }
+    mimeTypeGuess = "video/mp4";
+  } else {
+    dataUrl = await resizeImageFile(file, 1200, 0.8);
+    mimeTypeGuess = "image/jpeg";
+  }
+
+  const resp = await fetch(dataUrl);
+  const blob = await resp.blob();
+  const mimeType = blob.type || mimeTypeGuess;
+  const buf = await blob.arrayBuffer();
+
+  const uploadRes = await fetch("/api/media", {
+    method: "POST",
+    headers: { "x-admin-key": adminKey, "x-content-type": mimeType },
+    body: buf,
+  });
+  const data = await uploadRes.json().catch(() => ({}));
+  if (!uploadRes.ok || !data.ok) throw new Error(data.error || "Upload failed");
+  return { id: data.id, type: isVideo ? "video" : "image", mimeType };
+}
+
 function GarmentArt({ hue, altHue, hovered, pattern = 0 }) {
   const id = useRef(`g${Math.random().toString(36).slice(2, 9)}`).current;
   return (
@@ -319,7 +361,17 @@ function AspectBox({ ratio, className = "", children }) {
   );
 }
 
-function ProductImage({ p, hovered, pattern }) {
+function ProductImage({ p, hovered, pattern, selectedColor }) {
+  const items = p.media || [];
+  // Prefer a photo tagged for the selected color, then any untagged photo,
+  // then any photo at all, so a product always shows something sensible.
+  const forColor = selectedColor ? items.filter((m) => m.type === "image" && m.color === selectedColor) : [];
+  const untagged = items.filter((m) => m.type === "image" && !m.color);
+  const anyImage = items.filter((m) => m.type === "image");
+  const pick = forColor[0] || untagged[0] || anyImage[0];
+  if (pick) {
+    return <img src={mediaUrl(pick.id)} alt={p.name} className="w-full h-full object-cover" loading="lazy" />;
+  }
   if (p.image) {
     return <img src={p.image} alt={p.name} className="w-full h-full object-cover" loading="lazy" />;
   }
@@ -586,13 +638,29 @@ function Hero({ goCollection, media }) {
   );
 }
 
-function StyleTiles({ goCollection }) {
+/* ============================== SECTION MEDIA (editable homepage art) ============================== */
+// Renders whatever photo/video the store owner uploaded for a given
+// homepage slot (a style tile, the editorial banner, a lookbook image...).
+// Falls back to the generated placeholder art if nothing's been uploaded.
+function SectionMedia({ slotId, siteMedia, fallbackHue, fallbackAltHue, pattern = 0 }) {
+  const ref = siteMedia && siteMedia[slotId];
+  if (ref && ref.id) {
+    return ref.type === "video" ? (
+      <video src={mediaUrl(ref.id)} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+    ) : (
+      <img src={mediaUrl(ref.id)} alt="" className="w-full h-full object-cover" loading="lazy" />
+    );
+  }
+  return <GarmentArt hue={fallbackHue} altHue={fallbackAltHue} hovered={false} pattern={pattern} />;
+}
+
+function StyleTiles({ goCollection, siteMedia }) {
   const tiles = [
-    { label: "LONG KIMONOS", key: { style: "Long Kimonos" } },
-    { label: "SHORT KIMONOS", key: { style: "Short Kimonos" } },
-    { label: "SILK", key: { fabric: "Silk" } },
-    { label: "PRINTED", key: { style: "Printed Kimonos" } },
-    { label: "RESORT", cat: "Resortwear", key: {} },
+    { id: "style-long", label: "LONG KIMONOS", key: { style: "Long Kimonos" } },
+    { id: "style-short", label: "SHORT KIMONOS", key: { style: "Short Kimonos" } },
+    { id: "style-silk", label: "SILK", key: { fabric: "Silk" } },
+    { id: "style-printed", label: "PRINTED", key: { style: "Printed Kimonos" } },
+    { id: "style-resort", label: "RESORT", cat: "Resortwear", key: {} },
   ];
   return (
     <section className="px-5 md:px-10 py-16">
@@ -601,7 +669,7 @@ function StyleTiles({ goCollection }) {
         {tiles.map((t, i) => (
           <button key={t.label} onClick={() => goCollection(t.cat || "Kimonos", t.key)} className="group relative w-full overflow-hidden" style={{ paddingTop: "133.33%" }}>
             <div className="absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-110">
-              <GarmentArt hue={JEWEL[i % JEWEL.length]} altHue={JEWEL[(i + 2) % JEWEL.length]} hovered={false} />
+              <SectionMedia slotId={t.id} siteMedia={siteMedia} fallbackHue={JEWEL[i % JEWEL.length]} fallbackAltHue={JEWEL[(i + 2) % JEWEL.length]} />
             </div>
             <div className="absolute inset-0 bg-black/25 group-hover:bg-black/35 transition" />
             <span className="absolute bottom-5 left-5 text-white text-[13px] tracking-widest">{t.label}</span>
@@ -612,10 +680,10 @@ function StyleTiles({ goCollection }) {
   );
 }
 
-function EditorialBanner({ goCollection }) {
+function EditorialBanner({ goCollection, siteMedia }) {
   return (
     <section className="relative h-[70vh] min-h-[420px] overflow-hidden">
-      <GarmentArt hue={C.brown} altHue={C.red} hovered={false} />
+      <SectionMedia slotId="editorial-banner" siteMedia={siteMedia} fallbackHue={C.brown} fallbackAltHue={C.red} pattern={1} />
       <div className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center text-center px-6">
         <h2 className="text-white text-4xl md:text-5xl mb-4" style={{ fontFamily: "'Playfair Display', serif" }}>Made to be seen.</h2>
         <p className="text-white/85 mb-7">Fluid silhouettes. Statement prints. Effortless movement.</p>
@@ -625,7 +693,7 @@ function EditorialBanner({ goCollection }) {
   );
 }
 
-function OccasionTiles({ goCollection }) {
+function OccasionTiles({ goCollection, siteMedia }) {
   return (
     <section className="px-5 md:px-10 py-16 bg-[#F7F3EC]">
       <h2 className="text-2xl md:text-3xl mb-8" style={{ fontFamily: "'Playfair Display', serif" }}>Dress for the moment</h2>
@@ -633,7 +701,7 @@ function OccasionTiles({ goCollection }) {
         {OCCASIONS.map((o, i) => (
           <button key={o} onClick={() => goCollection(null, { occasion: o })} className="group relative w-full overflow-hidden" style={{ paddingTop: "62.5%" }}>
             <div className="absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-110">
-              <GarmentArt hue={JEWEL[(i + 4) % JEWEL.length]} altHue={JEWEL[(i + 1) % JEWEL.length]} hovered={false} />
+              <SectionMedia slotId={`occasion-${o}`} siteMedia={siteMedia} fallbackHue={JEWEL[(i + 4) % JEWEL.length]} fallbackAltHue={JEWEL[(i + 1) % JEWEL.length]} />
             </div>
             <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition" />
             <span className="absolute bottom-5 left-5 text-white text-[13px] tracking-widest">{o.toUpperCase()}</span>
@@ -644,10 +712,10 @@ function OccasionTiles({ goCollection }) {
   );
 }
 
-function FeaturedCollection({ goCollection }) {
+function FeaturedCollection({ goCollection, siteMedia }) {
   return (
     <section className="grid md:grid-cols-2">
-      <div className="h-[420px] md:h-auto"><GarmentArt hue={C.red} altHue={JEWEL[2]} hovered={false} pattern={1} /></div>
+      <div className="h-[420px] md:h-auto"><SectionMedia slotId="featured-collection" siteMedia={siteMedia} fallbackHue={C.red} fallbackAltHue={JEWEL[2]} pattern={1} /></div>
       <div className="flex flex-col justify-center px-8 md:px-16 py-16 bg-[#0E0D0C] text-white">
         <p className="text-[11px] tracking-[0.2em] text-white/60 mb-4">FEATURED COLLECTION</p>
         <h2 className="text-4xl md:text-5xl mb-4" style={{ fontFamily: "'Playfair Display', serif" }}>HANA</h2>
@@ -658,7 +726,7 @@ function FeaturedCollection({ goCollection }) {
   );
 }
 
-function Lookbook({ goCollection }) {
+function Lookbook({ goCollection, siteMedia }) {
   const looks = ["Over a slip dress", "With denim", "Over swimwear", "With tailored pants", "Evening styling"];
   return (
     <section className="px-5 md:px-10 py-16">
@@ -667,7 +735,7 @@ function Lookbook({ goCollection }) {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {looks.map((l, i) => (
           <div key={l} className={`relative w-full overflow-hidden ${i === 2 ? "md:mt-10" : ""}`} style={{ paddingTop: "146.67%" }}>
-            <div className="absolute inset-0"><GarmentArt hue={JEWEL[(i + 5) % JEWEL.length]} altHue={JEWEL[i % JEWEL.length]} hovered={false} /></div>
+            <div className="absolute inset-0"><SectionMedia slotId={`lookbook-${i}`} siteMedia={siteMedia} fallbackHue={JEWEL[(i + 5) % JEWEL.length]} fallbackAltHue={JEWEL[i % JEWEL.length]} /></div>
             <span className="absolute bottom-4 left-4 text-white text-[11px] tracking-wide max-w-[80%]">{l}</span>
           </div>
         ))}
@@ -828,9 +896,19 @@ function ProductPage({ products, slug, onOpen, addToCart, wishlist, toggleWish, 
   const p = products.find((x) => x.slug === slug) || products[0];
   const [color, setColor] = useState(p.colors[0].n);
   const [size, setSize] = useState(null);
-  const [imgIdx, setImgIdx] = useState(0);
+  const [activeMediaIdx, setActiveMediaIdx] = useState(0);
   const [openSection, setOpenSection] = useState("Description");
-  useEffect(() => { setColor(p.colors[0].n); setSize(null); setImgIdx(0); }, [slug]);
+  useEffect(() => { setColor(p.colors[0].n); setSize(null); setActiveMediaIdx(0); }, [slug]);
+
+  // Real uploaded gallery: photos/videos tagged for the selected color come
+  // first, then anything untagged (applies to every color). Falls back to
+  // the old single-photo/generated-art shots if nothing's been uploaded.
+  const allMedia = p.media || [];
+  const galleryItems = allMedia.length > 0
+    ? [...allMedia.filter((m) => m.color === color), ...allMedia.filter((m) => !m.color)]
+    : [];
+  useEffect(() => { setActiveMediaIdx(0); }, [color]);
+  const activeItem = galleryItems[activeMediaIdx];
 
   const shots = ["Front", "Back", "Detail", "Styled Look", "Fabric Close-Up"];
 
@@ -857,18 +935,43 @@ function ProductPage({ products, slug, onOpen, addToCart, wishlist, toggleWish, 
     <div className="px-5 md:px-10 py-10">
       <div className="grid md:grid-cols-2 gap-10">
         <div>
-          <div className="relative w-full overflow-hidden mb-3" style={{ paddingTop: "125%" }}>
-            <div className="absolute inset-0"><ProductImage p={p} hovered={imgIdx % 2 === 1} pattern={imgIdx === 2 ? 1 : 0} /></div>
+          <div className="relative w-full overflow-hidden mb-3 bg-[#F1E9DC]" style={{ paddingTop: "125%" }}>
+            <div className="absolute inset-0">
+              {activeItem ? (
+                activeItem.type === "video" ? (
+                  <video src={mediaUrl(activeItem.id)} className="w-full h-full object-cover" controls autoPlay muted loop playsInline />
+                ) : (
+                  <img src={mediaUrl(activeItem.id)} alt={p.name} className="w-full h-full object-cover" />
+                )
+              ) : (
+                <ProductImage p={p} hovered={false} pattern={0} selectedColor={color} />
+              )}
+            </div>
           </div>
-          {!p.image && (
+          {galleryItems.length > 1 ? (
+            <div className="flex gap-2 flex-wrap">
+              {galleryItems.map((m, i) => (
+                <button key={m.id} onClick={() => setActiveMediaIdx(i)} className={`relative overflow-hidden border-2 ${activeMediaIdx === i ? "border-black" : "border-transparent"}`} style={{ width: 64, height: 64 }}>
+                  {m.type === "video" ? (
+                    <>
+                      <video src={mediaUrl(m.id)} className="w-full h-full object-cover" muted />
+                      <div className="absolute inset-0 bg-black/25 flex items-center justify-center"><span className="text-white text-[10px]">▶</span></div>
+                    </>
+                  ) : (
+                    <img src={mediaUrl(m.id)} alt="" className="w-full h-full object-cover" />
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : !p.media && !p.image ? (
             <div className="flex gap-2">
               {shots.map((s, i) => (
-                <button key={s} onClick={() => setImgIdx(i)} className={`relative flex-1 overflow-hidden border-2 ${imgIdx === i ? "border-black" : "border-transparent"}`} style={{ paddingTop: "100%" }}>
+                <button key={s} onClick={() => setActiveMediaIdx(i)} className={`relative flex-1 overflow-hidden border-2 border-transparent`} style={{ paddingTop: "100%" }}>
                   <div className="absolute inset-0"><GarmentArt hue={p.hue} altHue={p.altHue} hovered={i % 2 === 1} pattern={i === 2 ? 1 : 0} /></div>
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
         <div className="md:pt-2">
           <p className="text-[11px] tracking-widest text-[#8a8378] mb-2">{p.collection ? p.collection.toUpperCase() + " COLLECTION" : p.category.toUpperCase()}</p>
@@ -1262,16 +1365,33 @@ function AdminLogin({ onLogin }) {
 
 /* ============================== ADMIN ============================== */
 /* ============================== PRODUCT FORM (shared: add + inline edit) ============================== */
-function ProductForm({ form, setForm, saving, onSubmit, onCancel, isEditing }) {
+function ProductForm({ form, setForm, saving, onSubmit, onCancel, isEditing, adminKey }) {
   const [imgDragOver, setImgDragOver] = useState(false);
+  const [uploading, setUploading] = useState(0); // count of in-flight uploads, for a simple busy indicator
   const allSizes = ["XS", "S", "M", "L", "XL", "One Size"];
   const categories = ["Kimonos", "Dresses", "Sets", "Tops", "Bottoms", "Resortwear", "Accessories"];
 
-  const handleImage = async (file) => {
-    if (!file) return;
-    const dataUrl = await resizeImageFile(file);
-    setForm((f) => ({ ...f, image: dataUrl }));
+  // Accepts any number of photos and videos at once, figures out which is
+  // which automatically, and adds each to this product's gallery.
+  const handleMediaFiles = async (fileList) => {
+    const files = Array.from(fileList || []).filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+    if (files.length === 0) return;
+    setUploading((n) => n + files.length);
+    for (const file of files) {
+      try {
+        const { id, type } = await uploadMediaFile(file, adminKey);
+        setForm((f) => ({ ...f, media: [...(f.media || []), { id, type, color: "" }] }));
+      } catch (e) { /* one failed upload shouldn't block the rest */ }
+      setUploading((n) => n - 1);
+    }
   };
+  const removeMedia = (idx) => setForm((f) => ({ ...f, media: f.media.filter((_, i) => i !== idx) }));
+  const setMediaColor = (idx, color) => setForm((f) => {
+    const media = [...f.media];
+    media[idx] = { ...media[idx], color };
+    return { ...f, media };
+  });
+
   const updateColor = (idx, key, val) => setForm((f) => {
     const colors = [...f.colors];
     colors[idx] = { ...colors[idx], [key]: val };
@@ -1280,6 +1400,8 @@ function ProductForm({ form, setForm, saving, onSubmit, onCancel, isEditing }) {
   const addColor = () => setForm((f) => (f.colors.length >= 4 ? f : { ...f, colors: [...f.colors, { n: "New Color", h: "#8C4A45" }] }));
   const removeColor = (idx) => setForm((f) => ({ ...f, colors: f.colors.filter((_, i) => i !== idx) }));
   const toggleSize = (s) => setForm((f) => ({ ...f, sizes: f.sizes.includes(s) ? f.sizes.filter((x) => x !== s) : [...f.sizes, s] }));
+
+  const media = form.media || [];
 
   return (
     <form onSubmit={onSubmit} className="bg-white p-6 space-y-5 border-2 border-black">
@@ -1290,32 +1412,58 @@ function ProductForm({ form, setForm, saving, onSubmit, onCancel, isEditing }) {
 
       <div className="grid md:grid-cols-2 gap-6">
         <div>
-          <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">PRODUCT PHOTO — the picture customers will see</label>
+          <label className="text-[11px] tracking-widest text-[#8a8378] block mb-1.5">PHOTOS &amp; VIDEOS — add as many as you like</label>
+
+          {media.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {media.map((m, i) => (
+                <div key={m.id} className="relative bg-[#F1E9DC] overflow-hidden" style={{ paddingTop: "125%" }}>
+                  <div className="absolute inset-0">
+                    {m.type === "video" ? (
+                      <video src={mediaUrl(m.id)} className="w-full h-full object-cover" muted />
+                    ) : (
+                      <img src={mediaUrl(m.id)} alt="" className="w-full h-full object-cover" />
+                    )}
+                    {m.type === "video" && <div className="absolute top-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5">VIDEO</div>}
+                    <button type="button" onClick={() => removeMedia(i)} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-white/90 flex items-center justify-center" aria-label="Remove">
+                      <X size={12} />
+                    </button>
+                    {form.colors.length > 1 && (
+                      <select
+                        value={m.color || ""}
+                        onChange={(e) => setMediaColor(i, e.target.value)}
+                        className="absolute bottom-1 left-1 right-1 text-[9px] bg-white/95 border border-black/20 px-1 py-0.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <option value="">All colors</option>
+                        {form.colors.map((c) => <option key={c.n} value={c.n}>{c.n}</option>)}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <label
             onDragOver={(e) => { e.preventDefault(); setImgDragOver(true); }}
             onDragLeave={() => setImgDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setImgDragOver(false); handleImage(e.dataTransfer.files[0]); }}
-            className={`relative block w-full max-w-xs bg-[#F1E9DC] border-2 ${imgDragOver ? "border-black border-solid bg-black/5" : "border-black/15 border-dashed"} cursor-pointer overflow-hidden group transition`}
-            style={{ paddingTop: "125%" }}
+            onDrop={(e) => { e.preventDefault(); setImgDragOver(false); handleMediaFiles(e.dataTransfer.files); }}
+            className={`relative flex flex-col items-center justify-center gap-1.5 w-full bg-[#F1E9DC] border-2 ${imgDragOver ? "border-black border-solid bg-black/5" : "border-black/15 border-dashed"} cursor-pointer text-center text-[12px] text-[#8a8378] py-6 transition`}
           >
-            <div className="absolute inset-0">
-              {form.image ? (
-                <img src={form.image} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-[#8a8378] text-[12px] gap-2 px-4 text-center">
-                  <span>Drag a photo here, or</span>
-                  <span className="border border-black px-3 py-1.5 text-[11px] tracking-widest mt-1">CHOOSE A PHOTO</span>
-                  <span className="text-[10px] tracking-widest">JPG or PNG</span>
-                </div>
-              )}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <span className="text-white text-[11px] tracking-widest border border-white px-3 py-1.5">{form.image ? "CHANGE PHOTO" : "UPLOAD PHOTO"}</span>
-              </div>
-            </div>
-            <input type="file" accept="image/*" onChange={(e) => handleImage(e.target.files[0])} className="hidden" />
+            {uploading > 0 ? (
+              <span>Uploading… ({uploading} left)</span>
+            ) : (
+              <>
+                <span>Drag photos or videos here, or</span>
+                <span className="border border-black px-3 py-1.5 text-[11px] tracking-widest mt-1">CHOOSE FILES</span>
+                <span className="text-[10px] tracking-widest">We figure out photo vs. video automatically</span>
+              </>
+            )}
+            <input type="file" accept="image/*,video/*" multiple onChange={(e) => handleMediaFiles(e.target.files)} className="hidden" />
           </label>
-          {form.image && (
-            <button type="button" onClick={() => setForm((f) => ({ ...f, image: null }))} className="mt-2 text-[11px] text-[#8C4A45] underline underline-offset-4">Remove photo</button>
+          {form.colors.length > 1 && media.length > 0 && (
+            <p className="text-[11px] text-[#8a8378] mt-2">Tip: tag a photo with a color so it shows up when a customer picks that color. Leave it "All colors" to show for every color.</p>
           )}
         </div>
 
@@ -1410,7 +1558,7 @@ function ProductForm({ form, setForm, saving, onSubmit, onCancel, isEditing }) {
       </details>
 
       <div className="flex gap-3 pt-2">
-        <button type="submit" disabled={saving} className="flex-1 bg-black text-white py-3.5 text-[12px] tracking-widest hover:bg-[#8C4A45] transition disabled:opacity-50">
+        <button type="submit" disabled={saving || uploading > 0} className="flex-1 bg-black text-white py-3.5 text-[12px] tracking-widest hover:bg-[#8C4A45] transition disabled:opacity-50">
           {saving ? "SAVING…" : isEditing ? "SAVE CHANGES" : "ADD THIS PRODUCT"}
         </button>
         <button type="button" onClick={onCancel} className="border border-black/20 px-5 text-[12px] tracking-widest">CANCEL</button>
@@ -1419,9 +1567,100 @@ function ProductForm({ form, setForm, saving, onSubmit, onCancel, isEditing }) {
   );
 }
 
+/* ============================== HOMEPAGE SECTIONS EDITOR ============================== */
+const HOMEPAGE_SLOTS = [
+  { id: "style-long", label: "\"Find Your Style\" — Long Kimonos tile" },
+  { id: "style-short", label: "\"Find Your Style\" — Short Kimonos tile" },
+  { id: "style-silk", label: "\"Find Your Style\" — Silk tile" },
+  { id: "style-printed", label: "\"Find Your Style\" — Printed tile" },
+  { id: "style-resort", label: "\"Find Your Style\" — Resort tile" },
+  { id: "occasion-Everyday", label: "\"Dress for the Moment\" — Everyday tile" },
+  { id: "occasion-Vacation", label: "\"Dress for the Moment\" — Vacation tile" },
+  { id: "occasion-Beach", label: "\"Dress for the Moment\" — Beach tile" },
+  { id: "occasion-Dinner", label: "\"Dress for the Moment\" — Dinner tile" },
+  { id: "occasion-Event", label: "\"Dress for the Moment\" — Event tile" },
+  { id: "occasion-Bridal", label: "\"Dress for the Moment\" — Bridal tile" },
+  { id: "editorial-banner", label: "\"Made to be Seen\" full-width banner" },
+  { id: "featured-collection", label: "Featured Collection (HANA) banner" },
+  { id: "lookbook-0", label: "The Edit — Look 1 (Over a slip dress)" },
+  { id: "lookbook-1", label: "The Edit — Look 2 (With denim)" },
+  { id: "lookbook-2", label: "The Edit — Look 3 (Over swimwear)" },
+  { id: "lookbook-3", label: "The Edit — Look 4 (With tailored pants)" },
+  { id: "lookbook-4", label: "The Edit — Look 5 (Evening styling)" },
+];
+
+function HomepageSlotEditor({ slot, current, adminKey, onSave }) {
+  const [dragOver, setDragOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleFile = async (file) => {
+    if (!file || !(file.type.startsWith("image/") || file.type.startsWith("video/"))) return;
+    setBusy(true);
+    try {
+      const { id, type } = await uploadMediaFile(file, adminKey);
+      await onSave(slot.id, { id, type });
+    } catch (e) { /* ignore a failed single upload */ }
+    setBusy(false);
+  };
+
+  return (
+    <div className="bg-white border border-black/10 p-3">
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
+        className={`relative block w-full overflow-hidden cursor-pointer border-2 ${dragOver ? "border-black border-solid bg-black/5" : "border-transparent"}`}
+        style={{ paddingTop: "70%" }}
+      >
+        <div className="absolute inset-0 bg-[#F1E9DC]">
+          {current && current.id ? (
+            current.type === "video" ? (
+              <video src={mediaUrl(current.id)} className="w-full h-full object-cover" muted loop autoPlay playsInline />
+            ) : (
+              <img src={mediaUrl(current.id)} alt="" className="w-full h-full object-cover" />
+            )
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-[10px] text-[#8a8378] tracking-widest text-center px-3">USING DEFAULT ART</div>
+          )}
+          <div className="absolute inset-0 bg-black/0 hover:bg-black/45 transition flex items-center justify-center opacity-0 hover:opacity-100">
+            <span className="text-white text-[10px] tracking-widest border border-white px-2 py-1">{busy ? "UPLOADING…" : "CHANGE"}</span>
+          </div>
+        </div>
+        <input type="file" accept="image/*,video/*" onChange={(e) => handleFile(e.target.files[0])} className="hidden" />
+      </label>
+      <p className="text-[11px] mt-2">{slot.label}</p>
+      {current && current.id && (
+        <button type="button" onClick={() => onSave(slot.id, null)} className="text-[10px] text-[#8C4A45] underline underline-offset-4 mt-1">Remove, use default art</button>
+      )}
+    </div>
+  );
+}
+
+function HomepageSectionsEditor({ siteMedia, adminKey, onSaveSlot }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-white border border-black/10 mb-10">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex justify-between items-center px-6 py-4">
+        <span className="text-[13px] tracking-widest">HOMEPAGE PHOTOS &amp; TILES — style tiles, banners, lookbook</span>
+        <ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-6 pb-6">
+          <p className="text-[12px] text-[#8a8378] mb-5 max-w-lg">Every image tile on your homepage (except products) can be swapped here. Click any tile below and upload a photo or video — we'll figure out which it is automatically.</p>
+          <div className="grid sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {HOMEPAGE_SLOTS.map((slot) => (
+              <HomepageSlotEditor key={slot.id} slot={slot} current={siteMedia && siteMedia[slot.id]} adminKey={adminKey} onSave={onSaveSlot} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================== ADMIN ============================== */
-function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, onLogout }) {
-  const emptyForm = { id: null, name: "", category: "Kimonos", style: "", collection: "", occasion: "Everyday", fabric: "", price: "", sizes: ["XS", "S", "M", "L", "XL"], colors: [{ n: "Ivory", h: "#F1E9DC" }], image: null, newArrival: false, bestSeller: false, limitedEdition: false, description: "" };
+function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, onLogout, adminKey, siteMedia, onSaveSlot }) {
+  const emptyForm = { id: null, name: "", category: "Kimonos", style: "", collection: "", occasion: "Everyday", fabric: "", price: "", sizes: ["XS", "S", "M", "L", "XL"], colors: [{ n: "Ivory", h: "#F1E9DC" }], media: [], newArrival: false, bestSeller: false, limitedEdition: false, description: "" };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1430,7 +1669,7 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
   const categories = ["Kimonos", "Dresses", "Sets", "Tops", "Bottoms", "Resortwear", "Accessories"];
 
   const startEdit = (p) => {
-    setForm({ ...p, price: String(p.price) });
+    setForm({ ...p, price: String(p.price), media: p.media || [] });
     setEditingId(p.id);
     setShowAddForm(false);
     requestAnimationFrame(() => {
@@ -1460,7 +1699,7 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
       occasion: form.occasion, fabric: form.fabric, price: parseFloat(form.price) || 0,
       sizes: form.sizes.length ? form.sizes : ["One Size"],
       colors: form.colors.length ? form.colors : [{ n: "Default", h: hue }],
-      image: form.image, hue, altHue,
+      media: form.media || [], hue, altHue,
       rating: existing.rating || "4.8",
       reviewCount: existing.reviewCount || 12,
       newArrival: form.newArrival, bestSeller: form.bestSeller, limitedEdition: form.limitedEdition,
@@ -1487,6 +1726,7 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
       <p className="text-[12px] text-[#8a8378] mb-8 max-w-lg">Changes save instantly to the live site for every visitor. Keep this page's link and login private.</p>
 
       <HeroEditor heroMedia={heroMedia} onSaveHero={onSaveHero} />
+      <HomepageSectionsEditor siteMedia={siteMedia} adminKey={adminKey} onSaveSlot={onSaveSlot} />
 
       <div className="flex items-center justify-between mb-6">
         <p className="text-[13px] tracking-widest">{products.length} PRODUCTS ON YOUR SITE</p>
@@ -1497,7 +1737,7 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
 
       {showAddForm && (
         <div className="mb-10">
-          <ProductForm form={form} setForm={setForm} saving={saving} onSubmit={submit} onCancel={cancelAdd} isEditing={false} />
+          <ProductForm form={form} setForm={setForm} saving={saving} onSubmit={submit} onCancel={cancelAdd} isEditing={false} adminKey={adminKey} />
         </div>
       )}
 
@@ -1514,7 +1754,7 @@ function AdminPage({ products, onSave, onDelete, onBack, heroMedia, onSaveHero, 
                 {inCat.map((p) => (
                   <div key={p.id} id={`admin-product-${p.id}`} className={editingId === p.id ? "sm:col-span-2 xl:col-span-3" : ""}>
                     {editingId === p.id ? (
-                      <ProductForm form={form} setForm={setForm} saving={saving} onSubmit={submit} onCancel={cancelEdit} isEditing={true} />
+                      <ProductForm form={form} setForm={setForm} saving={saving} onSubmit={submit} onCancel={cancelEdit} isEditing={true} adminKey={adminKey} />
                     ) : (
                       <div onClick={() => startEdit(p)} className="bg-white border border-black/10 p-3 cursor-pointer hover:border-black/30 transition">
                         <div className="relative w-full overflow-hidden mb-2 bg-[#F1E9DC]" style={{ paddingTop: "125%" }}>
@@ -1584,9 +1824,38 @@ export default function App() {
   const [products, setProducts] = useState(FALLBACK_PRODUCTS);
   const [sheetStatus, setSheetStatus] = useState(SHEET_CSV_URL ? "loading" : "no-url");
   const [heroMedia, setHeroMedia] = useState(null);
+  const [siteMedia, setSiteMedia] = useState({});
   const [productsReady, setProductsReady] = useState(false);
   const [heroReady, setHeroReady] = useState(false);
-  const dataReady = productsReady && heroReady;
+  const [siteMediaReady, setSiteMediaReady] = useState(false);
+  const dataReady = productsReady && heroReady && siteMediaReady;
+
+  // Load which uploaded photo/video is assigned to each editable homepage
+  // tile/banner (style tiles, editorial banner, lookbook, etc.).
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/site-media");
+        if (res.ok) setSiteMedia(await res.json());
+      } catch (e) { /* API not set up yet, or offline */ }
+      setSiteMediaReady(true);
+    })();
+  }, []);
+
+  const saveSiteMediaSlot = async (slotId, ref) => {
+    const next = { ...siteMedia };
+    if (ref) next[slotId] = ref; else delete next[slotId];
+    setSiteMedia(next);
+    try {
+      const res = await fetch("/api/site-media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify(next),
+      });
+      if (res.status === 401) { logout(); addToast("Session expired — please log in again"); return; }
+      addToast(ref ? "Saved" : "Removed");
+    } catch (e) { addToast("Couldn't save — check your connection"); }
+  };
 
   // Load the shared homepage cover (photo/video) from the server.
   useEffect(() => {
@@ -1771,12 +2040,12 @@ export default function App() {
         <>
           <Hero goCollection={goCollection} media={heroMedia} />
           <Carousel title="New Arrivals" products={newArrivals} onOpen={openProduct} wishlist={wishlist} toggleWish={toggleWish} viewAll={() => goCollection(null, { featured: "new" })} />
-          <StyleTiles goCollection={goCollection} />
-          <EditorialBanner goCollection={goCollection} />
-          <OccasionTiles goCollection={goCollection} />
+          <StyleTiles goCollection={goCollection} siteMedia={siteMedia} />
+          <EditorialBanner goCollection={goCollection} siteMedia={siteMedia} />
+          <OccasionTiles goCollection={goCollection} siteMedia={siteMedia} />
           <Carousel title="Most Loved" products={bestSellers} onOpen={openProduct} wishlist={wishlist} toggleWish={toggleWish} viewAll={() => goCollection(null, { featured: "best" })} />
-          <FeaturedCollection goCollection={goCollection} />
-          <Lookbook goCollection={goCollection} />
+          <FeaturedCollection goCollection={goCollection} siteMedia={siteMedia} />
+          <Lookbook goCollection={goCollection} siteMedia={siteMedia} />
           <BrandStory />
           <SocialGallery />
           <Newsletter />
@@ -1797,7 +2066,7 @@ export default function App() {
 
       {view === "admin" && (
         adminAuthed
-          ? <AdminPage products={products} onSave={saveProduct} onDelete={deleteProduct} onBack={goHome} heroMedia={heroMedia} onSaveHero={saveHero} onLogout={logout} />
+          ? <AdminPage products={products} onSave={saveProduct} onDelete={deleteProduct} onBack={goHome} heroMedia={heroMedia} onSaveHero={saveHero} onLogout={logout} adminKey={adminKey} siteMedia={siteMedia} onSaveSlot={saveSiteMediaSlot} />
           : <AdminLogin onLogin={login} />
       )}
 
